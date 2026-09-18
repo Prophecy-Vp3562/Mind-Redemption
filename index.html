@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Thought Redemption — Personal Metacognition &amp; Notes</title>
+  <meta name="description" content="Local-first personal thinking, self-questioning, and note-taking tool with multi-block cross layout metacognition.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400..600;1,6..72,400..600&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <!-- App Container -->
+  <div id="app" class="app-root">
+
+    <!-- Top-Level Header (Section 2) -->
+    <header class="app-header">
+      <div class="header-brand">
+        <div class="brand-symbol">
+          <span class="symbol-dot"></span>
+        </div>
+        <h1 class="brand-title">Thought Redemption</h1>
+      </div>
+
+      <!-- 3 Top-Level Tabs -->
+      <nav class="header-nav" aria-label="Main Navigation">
+        <button class="nav-tab-btn active" data-tab="mindflow" id="tab-mindflow">
+          <span class="tab-icon">✦</span> Mind Flow
+        </button>
+        <button class="nav-tab-btn" data-tab="notes" id="tab-notes">
+          <span class="tab-icon">☰</span> Note
+        </button>
+        <button class="nav-tab-btn" data-tab="diary" id="tab-diary">
+          <span class="tab-icon">📅</span> Diary
+        </button>
+      </nav>
+
+      <!-- Header Right Status & Controls -->
+      <div class="header-actions">
+        <div id="app-save-status" class="status-indicator" title="Autosave status">Ready</div>
+        <button id="header-file-status" class="file-status-badge" title="Local storage file status">
+          Connecting...
+        </button>
+        <button id="theme-toggle-btn" class="theme-btn" title="Toggle Dark/Light Mode" aria-label="Toggle Theme">
+          ☀️ Light
+        </button>
+      </div>
+    </header>
+
+    <!-- File System Access Banner (Section 7) -->
+    <div id="fs-connection-banner" class="connection-banner hidden">
+      <div class="banner-content">
+        <span id="banner-message" class="banner-text"></span>
+        <div class="banner-actions">
+          <button id="banner-reconnect-btn" class="btn btn-sm btn-primary hidden">Reconnect</button>
+          <button id="banner-change-file-btn" class="btn btn-sm btn-secondary hidden">Select File</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main Content Area -->
+    <main class="app-main-content">
+
+      <!-- ============================================== -->
+      <!-- TAB 1: MIND FLOW (Section 3 - Core Metacognition) -->
+      <!-- ============================================== -->
+      <section id="mindflow-tab-view" class="tab-view active-view">
+        
+        <!-- 3.1 Shelf View (Notes / Books List) -->
+        <div id="mindflow-shelf-view" class="mindflow-shelf">
+          <div class="shelf-header">
+            <div class="shelf-heading-group">
+              <h2>Mind Flow Library</h2>
+              <p>Structured, parallel writing spaces designed for multi-layered thinking and self-questioning.</p>
+            </div>
+            <button id="mf-create-note-btn" class="btn btn-primary">
+              <span class="btn-icon">+</span> Create New Note
+            </button>
+          </div>
+
+          <!-- Notes Grid -->
+          <div id="mf-notes-grid" class="mf-notes-grid">
+            <!-- Dynamically populated -->
+          </div>
+        </div>
+
+        <!-- 3.2 & 3.3 Workspace View (Page slide-strip & Cross layout) -->
+        <div id="mindflow-workspace-view" class="mindflow-workspace hidden">
+          
+          <!-- Workspace Header / Nav -->
+          <div class="workspace-top-bar">
+            <div class="workspace-left-nav">
+              <button id="mf-back-to-shelf" class="btn-text-back" title="Back to Library">
+                ← Library
+              </button>
+              <div class="title-divider">/</div>
+              <div id="mf-active-note-title" class="editable-note-title" contenteditable="true" spellcheck="false" title="Click to rename note">
+                Untitled Note
+              </div>
+            </div>
+
+            <div class="workspace-center-nav">
+              <button id="mf-prev-page" class="btn-slide-nav" title="Previous Page (Slide)">◀</button>
+              <span id="mf-page-counter" class="page-counter">Page 1 of 1</span>
+              <button id="mf-next-page" class="btn-slide-nav" title="Next Page (Slide)">▶</button>
+            </div>
+
+            <div class="workspace-right-nav">
+              <button id="mf-delete-page-btn" class="btn-icon-subtle" title="Delete current slide">
+                🗑️ Delete Page
+              </button>
+            </div>
+          </div>
+
+          <!-- Slide Strip & Canvas Area -->
+          <div class="workspace-body">
+            
+            <!-- Slide Strip Sidebar (PowerPoint style) -->
+            <aside class="slide-strip-sidebar" id="mf-slide-strip-container">
+              <div class="slide-strip-header">
+                <span class="strip-label">PAGES</span>
+                <button id="mf-add-page-btn" class="btn-add-slide" title="Create a new page">+ New</button>
+              </div>
+              <div id="mf-slide-strip" class="slide-strip-list">
+                <!-- Dynamically populated thumbnails -->
+              </div>
+            </aside>
+
+            <!-- Cross Layout Canvas Area -->
+            <div class="workspace-canvas-scroll">
+              <div id="mf-cross-layout" class="mf-cross-grid">
+                <!-- Main Block + 0 to 4 Side Blocks dynamically rendered -->
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================================== -->
+      <!-- TAB 2: NOTE (Section 4 - Google Keep Style) -->
+      <!-- ============================================== -->
+      <section id="notes-tab-view" class="tab-view hidden">
+        <div class="notes-tab-container">
+          
+          <!-- Search & Filter -->
+          <div class="notes-search-bar">
+            <span class="search-icon">🔍</span>
+            <input type="text" id="notes-search-input" placeholder="Search notes..." autocomplete="off">
+          </div>
+
+          <!-- Quick Note Capture Box -->
+          <div class="quick-note-wrapper" id="quick-note-box">
+            <!-- Collapsed state -->
+            <div id="note-quick-collapsed" class="quick-note-collapsed">
+              <span>Take a note...</span>
+            </div>
+
+            <!-- Expanded state -->
+            <div id="note-quick-expanded" class="quick-note-expanded hidden">
+              <input type="text" id="quick-note-title" class="quick-input-title" placeholder="Title">
+              <textarea id="quick-note-body" class="quick-input-body" placeholder="Take a note..." rows="3"></textarea>
+              <div class="quick-note-toolbar">
+                <div class="quick-toolbar-left">
+                  <button id="quick-note-pin" class="icon-btn" title="Pin note">📌</button>
+                </div>
+                <button id="quick-note-done" class="btn btn-sm btn-primary">Done</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Notes Masonry Grid -->
+          <div id="notes-masonry-grid" class="notes-masonry-container">
+            <!-- Dynamically populated -->
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================================== -->
+      <!-- TAB 3: DIARY (Section 5 - Placeholder) -->
+      <!-- ============================================== -->
+      <section id="diary-tab-view" class="tab-view hidden">
+        <!-- Dynamically populated by DiaryController -->
+      </section>
+
+    </main>
+
+    <!-- ============================================== -->
+    <!-- MODALS -->
+    <!-- ============================================== -->
+
+    <!-- File System Access First-Run / Change Modal (Section 7) -->
+    <div id="fs-file-modal" class="modal-overlay hidden">
+      <div class="modal-card fs-modal-box">
+        <button id="modal-close-file-btn" class="modal-corner-close" title="Close" aria-label="Close">✕</button>
+        <div class="modal-header">
+          <div class="modal-icon">📁</div>
+          <h3>Local Storage Workspace</h3>
+          <p class="modal-subtitle">
+            Thought Redemption is <strong>local-first and private</strong>. All your notes, slides, and reflections can be saved in a single JSON file directly on your computer via the File System Access API.
+          </p>
+        </div>
+        <div class="fs-modal-choices">
+          <button id="modal-create-file-btn" class="fs-choice-btn">
+            <span class="choice-icon">✨</span>
+            <div class="choice-text">
+              <strong>Create New Data File</strong>
+              <span>Save a new <code>thought-redemption-data.json</code> to your computer</span>
+            </div>
+          </button>
+          <button id="modal-open-file-btn" class="fs-choice-btn">
+            <span class="choice-icon">📂</span>
+            <div class="choice-text">
+              <strong>Open Existing Data File</strong>
+              <span>Select an existing thought file you already created</span>
+            </div>
+          </button>
+        </div>
+        <div class="modal-footer fs-modal-footer">
+          <button id="modal-skip-file-btn" class="btn btn-sm btn-secondary" style="margin-bottom: 0.5rem;">Continue with Browser Storage</button>
+          <div><small class="fs-security-note">🔒 No data ever touches a remote server. You can link a file anytime from the top bar.</small></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Add Page Modal (Side block count selection: 0 to 4) -->
+    <div id="add-page-modal" class="modal-overlay hidden">
+      <div class="modal-card add-page-dialog">
+        <div class="modal-header">
+          <h3>Create New Page</h3>
+          <p class="modal-subtitle">
+            Choose how many Side blocks to accompany the central Main block on this page (0 to 4):
+          </p>
+        </div>
+
+        <div class="block-count-picker">
+          <button class="block-count-choice" data-count="0">
+            <div class="count-preview-box count-0">
+              <span class="box-center">Main</span>
+            </div>
+            <strong>0 Side Blocks</strong>
+            <span>Single central flow</span>
+          </button>
+
+          <button class="block-count-choice" data-count="1">
+            <div class="count-preview-box count-1">
+              <span class="box-center">M</span>
+              <span class="box-side">S1</span>
+            </div>
+            <strong>1 Side Block</strong>
+            <span>Thesis + Counterpart</span>
+          </button>
+
+          <button class="block-count-choice" data-count="2">
+            <div class="count-preview-box count-2">
+              <span class="box-side">S1</span>
+              <span class="box-center">M</span>
+              <span class="box-side">S2</span>
+            </div>
+            <strong>2 Side Blocks</strong>
+            <span>Triad perspectives</span>
+          </button>
+
+          <button class="block-count-choice" data-count="3">
+            <div class="count-preview-box count-3">
+              <span class="box-side">S1</span>
+              <span class="box-side">S2</span>
+              <span class="box-center">M</span>
+              <span class="box-side">S3</span>
+            </div>
+            <strong>3 Side Blocks</strong>
+            <span>Four quadrants</span>
+          </button>
+
+          <button class="block-count-choice selected" data-count="4">
+            <div class="count-preview-box count-4">
+              <span class="box-side top">S1</span>
+              <span class="box-side left">S4</span>
+              <span class="box-center">Main</span>
+              <span class="box-side right">S2</span>
+              <span class="box-side btm">S3</span>
+            </div>
+            <strong>4 Side Blocks</strong>
+            <span>Full cross layout</span>
+          </button>
+        </div>
+
+        <div class="modal-dialog-actions">
+          <button id="modal-cancel-page-btn" class="btn btn-secondary">Cancel</button>
+          <button id="modal-create-page-btn" class="btn btn-primary">Create Page</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Note Edit Modal (Section 4) -->
+    <div id="note-edit-modal" class="modal-overlay hidden">
+      <div class="modal-card note-edit-card">
+        <div class="note-edit-header">
+          <input type="text" id="modal-note-title" class="note-edit-title-input" placeholder="Title">
+          <div class="note-edit-header-actions">
+            <button id="modal-note-pin" class="icon-btn" title="Pin note">📌</button>
+            <button id="modal-note-delete" class="icon-btn" title="Delete note">🗑️</button>
+            <button id="modal-note-close" class="btn btn-sm btn-secondary">Done</button>
+          </div>
+        </div>
+        <textarea id="modal-note-body" class="note-edit-textarea" placeholder="Take a note..."></textarea>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Main ES Module entry -->
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
