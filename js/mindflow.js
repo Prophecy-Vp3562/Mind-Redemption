@@ -82,7 +82,12 @@ export class MindFlowController {
   }
 
   getNotes() {
-    return storage.getMindFlowData().notes;
+    const mf = storage.getMindFlowData();
+    if (!mf) return [];
+    if (!mf.books && !mf.notes) {
+      mf.books = [];
+    }
+    return mf.books || mf.notes;
   }
 
   getActiveNote() {
@@ -732,4 +737,14 @@ function escapeHTML(str) {
       '"': '&quot;'
     }[tag] || tag)
   );
+}
+
+let mindFlowInstance = null;
+
+export function initMindFlow(app = null) {
+  if (!mindFlowInstance) {
+    mindFlowInstance = new MindFlowController(app);
+  }
+  mindFlowInstance.render();
+  return mindFlowInstance;
 }

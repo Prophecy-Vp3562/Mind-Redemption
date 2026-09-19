@@ -117,7 +117,12 @@ export class NotesController {
   }
 
   getNotes() {
-    return storage.getNotesData().items;
+    const notesData = storage.getNotesData();
+    if (!notesData) return [];
+    if (!notesData.items && !notesData.list) {
+      notesData.items = [];
+    }
+    return notesData.items || notesData.list;
   }
 
   saveQuickNoteAndCollapse() {
@@ -321,4 +326,14 @@ function escapeHTML(str) {
       '"': '&quot;'
     }[tag] || tag)
   );
+}
+
+let notesInstance = null;
+
+export function initNotes(app = null) {
+  if (!notesInstance) {
+    notesInstance = new NotesController(app);
+  }
+  notesInstance.render();
+  return notesInstance;
 }

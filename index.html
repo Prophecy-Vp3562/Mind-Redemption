@@ -11,10 +11,10 @@
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-  <!-- App Container -->
+  <!-- App Root Container -->
   <div id="app" class="app-root">
 
-    <!-- Top-Level Header (Section 2) -->
+    <!-- Top-Level Header -->
     <header class="app-header">
       <div class="header-brand">
         <div class="brand-symbol">
@@ -23,51 +23,37 @@
         <h1 class="brand-title">Thought Redemption</h1>
       </div>
 
-      <!-- 3 Top-Level Tabs -->
+      <!-- Main Navigation Tabs -->
       <nav class="header-nav" aria-label="Main Navigation">
         <button class="nav-tab-btn active" data-tab="mindflow" id="tab-mindflow">
           <span class="tab-icon">✦</span> Mind Flow
         </button>
         <button class="nav-tab-btn" data-tab="notes" id="tab-notes">
-          <span class="tab-icon">☰</span> Note
+          <span class="tab-icon">☰</span> Notes
         </button>
         <button class="nav-tab-btn" data-tab="diary" id="tab-diary">
           <span class="tab-icon">📅</span> Diary
         </button>
       </nav>
 
-      <!-- Header Right Status & Controls -->
+      <!-- Header Controls: Sync Status Badge & Theme Toggle -->
       <div class="header-actions">
-        <div id="app-save-status" class="status-indicator" title="Autosave status">Ready</div>
-        <button id="header-file-status" class="file-status-badge" title="Local storage file status">
-          Connecting...
-        </button>
+        <span id="sync-status" class="status-indicator" title="FastAPI Sync Status">Connecting...</span>
         <button id="theme-toggle-btn" class="theme-btn" title="Toggle Dark/Light Mode" aria-label="Toggle Theme">
           ☀️ Light
         </button>
       </div>
     </header>
 
-    <!-- File System Access Banner (Section 7) -->
-    <div id="fs-connection-banner" class="connection-banner hidden">
-      <div class="banner-content">
-        <span id="banner-message" class="banner-text"></span>
-        <div class="banner-actions">
-          <button id="banner-reconnect-btn" class="btn btn-sm btn-primary hidden">Reconnect</button>
-          <button id="banner-change-file-btn" class="btn btn-sm btn-secondary hidden">Select File</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Main Content Area -->
+    <!-- Main View Containers -->
     <main class="app-main-content">
 
       <!-- ============================================== -->
-      <!-- TAB 1: MIND FLOW (Section 3 - Core Metacognition) -->
+      <!-- TAB 1: MIND FLOW (Core Metacognitive Engine)  -->
       <!-- ============================================== -->
-      <section id="mindflow-tab-view" class="tab-view active-view">
+      <section id="mindflow-view" class="view-panel active">
         
-        <!-- 3.1 Shelf View (Notes / Books List) -->
+        <!-- Shelf View: Book Library -->
         <div id="mindflow-shelf-view" class="mindflow-shelf">
           <div class="shelf-header">
             <div class="shelf-heading-group">
@@ -81,14 +67,14 @@
 
           <!-- Notes Grid -->
           <div id="mf-notes-grid" class="mf-notes-grid">
-            <!-- Dynamically populated -->
+            <!-- Dynamically populated by mindflow.js -->
           </div>
         </div>
 
-        <!-- 3.2 & 3.3 Workspace View (Page slide-strip & Cross layout) -->
+        <!-- Workspace View: Slides Navigation & 5-Block Cross Layout -->
         <div id="mindflow-workspace-view" class="mindflow-workspace hidden">
           
-          <!-- Workspace Header / Nav -->
+          <!-- Workspace Navigation Bar -->
           <div class="workspace-top-bar">
             <div class="workspace-left-nav">
               <button id="mf-back-to-shelf" class="btn-text-back" title="Back to Library">
@@ -113,10 +99,10 @@
             </div>
           </div>
 
-          <!-- Slide Strip & Canvas Area -->
+          <!-- Slide Strip & Cross Layout Body -->
           <div class="workspace-body">
             
-            <!-- Slide Strip Sidebar (PowerPoint style) -->
+            <!-- Slide Strip Sidebar (Thumbnails) -->
             <aside class="slide-strip-sidebar" id="mf-slide-strip-container">
               <div class="slide-strip-header">
                 <span class="strip-label">PAGES</span>
@@ -139,12 +125,12 @@
       </section>
 
       <!-- ============================================== -->
-      <!-- TAB 2: NOTE (Section 4 - Google Keep Style) -->
+      <!-- TAB 2: NOTES (Google Keep Style)              -->
       <!-- ============================================== -->
-      <section id="notes-tab-view" class="tab-view hidden">
+      <section id="notes-view" class="view-panel">
         <div class="notes-tab-container">
           
-          <!-- Search & Filter -->
+          <!-- Search & Filter Bar -->
           <div class="notes-search-bar">
             <span class="search-icon">🔍</span>
             <input type="text" id="notes-search-input" placeholder="Search notes..." autocomplete="off">
@@ -172,57 +158,23 @@
 
           <!-- Notes Masonry Grid -->
           <div id="notes-masonry-grid" class="notes-masonry-container">
-            <!-- Dynamically populated -->
+            <!-- Dynamically populated by notes.js -->
           </div>
         </div>
       </section>
 
       <!-- ============================================== -->
-      <!-- TAB 3: DIARY (Section 5 - Placeholder) -->
+      <!-- TAB 3: DIARY (Chronological Reflection View)  -->
       <!-- ============================================== -->
-      <section id="diary-tab-view" class="tab-view hidden">
-        <!-- Dynamically populated by DiaryController -->
+      <section id="diary-view" class="view-panel">
+        <!-- Clean mount point dynamically populated by diary.js -->
       </section>
 
     </main>
 
     <!-- ============================================== -->
-    <!-- MODALS -->
+    <!-- MODALS & DIALOGS                               -->
     <!-- ============================================== -->
-
-    <!-- File System Access First-Run / Change Modal (Section 7) -->
-    <div id="fs-file-modal" class="modal-overlay hidden">
-      <div class="modal-card fs-modal-box">
-        <button id="modal-close-file-btn" class="modal-corner-close" title="Close" aria-label="Close">✕</button>
-        <div class="modal-header">
-          <div class="modal-icon">📁</div>
-          <h3>Local Storage Workspace</h3>
-          <p class="modal-subtitle">
-            Thought Redemption is <strong>local-first and private</strong>. All your notes, slides, and reflections can be saved in a single JSON file directly on your computer via the File System Access API.
-          </p>
-        </div>
-        <div class="fs-modal-choices">
-          <button id="modal-create-file-btn" class="fs-choice-btn">
-            <span class="choice-icon">✨</span>
-            <div class="choice-text">
-              <strong>Create New Data File</strong>
-              <span>Save a new <code>thought-redemption-data.json</code> to your computer</span>
-            </div>
-          </button>
-          <button id="modal-open-file-btn" class="fs-choice-btn">
-            <span class="choice-icon">📂</span>
-            <div class="choice-text">
-              <strong>Open Existing Data File</strong>
-              <span>Select an existing thought file you already created</span>
-            </div>
-          </button>
-        </div>
-        <div class="modal-footer fs-modal-footer">
-          <button id="modal-skip-file-btn" class="btn btn-sm btn-secondary" style="margin-bottom: 0.5rem;">Continue with Browser Storage</button>
-          <div><small class="fs-security-note">🔒 No data ever touches a remote server. You can link a file anytime from the top bar.</small></div>
-        </div>
-      </div>
-    </div>
 
     <!-- Add Page Modal (Side block count selection: 0 to 4) -->
     <div id="add-page-modal" class="modal-overlay hidden">
@@ -293,7 +245,7 @@
       </div>
     </div>
 
-    <!-- Note Edit Modal (Section 4) -->
+    <!-- Note Edit Modal (Notes Tab) -->
     <div id="note-edit-modal" class="modal-overlay hidden">
       <div class="modal-card note-edit-card">
         <div class="note-edit-header">
@@ -310,7 +262,7 @@
 
   </div>
 
-  <!-- Main ES Module entry -->
+  <!-- Main ES Module Entry Point -->
   <script type="module" src="js/app.js"></script>
 </body>
 </html>
