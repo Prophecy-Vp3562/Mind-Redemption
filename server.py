@@ -2,16 +2,29 @@ from pathlib import Path
 import json
 import tempfile
 import os
-from typing import Any, Dict
+from datetime import datetime
+from typing import Any, Dict, List
 
 from fastapi import FastAPI, HTTPException, Body
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
 # Initialize Storage Directory
-STORAGE_DIR = Path.home() / "Documents" / "Thought Redemption Data"
+NEW_STORAGE_DIR = Path.home() / "Documents" / "Mind Redemption Data"
+OLD_STORAGE_DIR = Path.home() / "Documents" / "Thought Redemption Data"
+STORAGE_DIR = OLD_STORAGE_DIR if (OLD_STORAGE_DIR.exists() and not NEW_STORAGE_DIR.exists()) else NEW_STORAGE_DIR
 STORAGE_DIR.mkdir(parents=True, exist_ok=True)
-DATA_FILE = STORAGE_DIR / "thought-redemption-data.json"
+
+DATA_FILE = STORAGE_DIR / "mind-redemption-data.json"
+if not DATA_FILE.exists():
+    OLD_DATA_FILE = STORAGE_DIR / "thought-redemption-data.json"
+    if OLD_DATA_FILE.exists():
+        DATA_FILE = OLD_DATA_FILE
+
+# Dedicated Hierarchical Timeline Directory Contract:
+# timeline/{YYYY}/{MM}/{DD}.json
+TIMELINE_DIR = STORAGE_DIR / "timeline"
+TIMELINE_DIR.mkdir(parents=True, exist_ok=True)
 
 DEFAULT_SCHEMA: Dict[str, Any] = {
     "version": "1.0.0",
@@ -80,7 +93,7 @@ DEFAULT_SCHEMA: Dict[str, Any] = {
     "diary": {"entries": {}},
 }
 
-app = FastAPI(title="Thought Redemption Local Companion Server")
+app = FastAPI(title="Mind Redemption Local Companion Server")
 
 # CORS Middleware for local web frontends
 app.add_middleware(
@@ -103,6 +116,120 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+def atomic_write(target_path: Path, data: Dict[str, Any]):
+    """
+    Performs an atomic write to prevent corruption:
+    Writes JSON to a temporary file in the same directory, then atomically replaces target.
+    """
+    temp_file = None
+    try:
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=target_path.parent,
+            delete=False,
+            suffix=".tmp",
+        ) as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+            temp_file = Path(f.name)
+
+        # Atomic replacement on POSIX and Windows (Python 3.3+)
+        os.replace(temp_file, target_path)
+    except Exception:
+        if temp_file and temp_file.exists():
+            try:
+                temp_file.unlink()
+            except OSError:
+                pass
+        raise
+
+
+def get_day_file_path(date_str: str) -> Path:
+    """
+    Parses "YYYY-MM-DD" into Year, Month, Day, creates parent folders if missing,
+    and returns Path to timeline/{YYYY}/{MM}/{DD}.json.
+    """
+    cleaned = date_str.strip().split("T")[0]
+    parts = cleaned.split("-")
+    if len(parts) != 3:
+        raise ValueError(f"Invalid date format: '{date_str}'. Expected YYYY-MM-DD.")
+
+    year = f"{int(parts[0]):04d}"
+    month = f"{int(parts[1]):02d}"
+    day = f"{int(parts[2]):02d}"
+
+    target_dir = TIMELINE_DIR / year / month
+    target_dir.mkdir(parents=True, exist_ok=True)
+    return target_dir / f"{day}.json"
+
+
+def get_default_day_schema(date_str: str) -> Dict[str, Any]:
+    """
+    Default schema for an individual day timeline document.
+    """
+    cleaned = date_str.strip().split("T")[0]
+    return {
+        "date": cleaned,
+        "totalDurationSeconds": 0,
+        "sessions": [],
+        "events": []
+    }
+
+
+def load_day_file(date_str: str) -> Dict[str, Any]:
+    """
+    Reads an individual day file or returns default schema.
+    """
+    cleaned = date_str.strip().split("T")[0]
+    try:
+        file_path = get_day_file_path(cleaned)
+        if not file_path.exists():
+            return get_default_day_schema(cleaned)
+        with open(file_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        data.setdefault("date", cleaned)
+        data.setdefault("totalDurationSeconds", 0)
+        data.setdefault("sessions", [])
+        data.setdefault("events", [])
+        return data
+    except Exception:
+        return get_default_day_schema(cleaned)
+
+
+def migrate_legacy_timeline():
+    """
+    Migrates legacy flat timeline file into the hierarchical timeline/{YYYY}/{MM}/{DD}.json structure if present.
+    """
+    legacy_files = [
+        STORAGE_DIR / "thought-redemption-timeline.json",
+        STORAGE_DIR / "mind-redemption-timeline.json",
+    ]
+    for leg_file in legacy_files:
+        if leg_file.exists():
+            try:
+                with open(leg_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                by_date = data.get("byDate", {})
+                for date_str, day_content in by_date.items():
+                    try:
+                        file_path = get_day_file_path(date_str)
+                        if not file_path.exists():
+                            day_data = get_default_day_schema(date_str)
+                            day_data["totalDurationSeconds"] = int(day_content.get("totalDurationSeconds", 0))
+                            day_data["sessions"] = day_content.get("sessions", [])
+                            day_data["events"] = day_content.get("events", [])
+                            atomic_write(file_path, day_data)
+                    except Exception as me:
+                        print(f"Migration error for {date_str}: {me}")
+            except Exception as e:
+                print(f"Legacy timeline migration error for {leg_file}: {e}")
+
+
+# Run legacy migration on startup
+migrate_legacy_timeline()
 
 
 @app.get("/api/health")
@@ -138,32 +265,155 @@ async def save_data(payload: Dict[str, Any] = Body(...)):
         )
 
 
-def atomic_write(target_path: Path, data: Dict[str, Any]):
-    """
-    Performs an atomic write to prevent corruption:
-    Writes JSON to a temporary file in the same directory, then replaces target.
-    """
-    temp_file = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            encoding="utf-8",
-            dir=target_path.parent,
-            delete=False,
-            suffix=".tmp",
-        ) as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
-            temp_file = Path(f.name)
+# ==========================================================
+# Hierarchical Timeline Endpoints (Year/Month/Day Structure)
+# ==========================================================
 
-        # Atomic replacement on POSIX and Windows (Python 3.3+)
-        os.replace(temp_file, target_path)
-    except Exception:
-        if temp_file and temp_file.exists():
+@app.get("/api/timeline/day/{date_str}")
+async def get_timeline_day(date_str: str):
+    """
+    Directly reads and returns the contents of timeline/{YYYY}/{MM}/{DD}.json.
+    If non-existent, returns an empty template with status 200.
+    """
+    try:
+        return load_day_file(date_str)
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to read day timeline for {date_str}: {str(e)}"
+        )
+
+
+@app.get("/api/timeline/month/{year}/{month}")
+async def get_timeline_month(year: str, month: str):
+    """
+    Scans timeline/{year}/{month}/*.json and returns a summary map of all recorded days in that month.
+    Format: { "2026-09-20": { "totalDuration": 1800, "totalDurationSeconds": 1800, "eventCount": 6, "modules": ["notes", "mindflow"] } }
+    """
+    try:
+        year_str = f"{int(year):04d}"
+        month_str = f"{int(month):02d}"
+        month_dir = TIMELINE_DIR / year_str / month_str
+
+        if not month_dir.exists():
+            return {}
+
+        summary: Dict[str, Any] = {}
+        for json_file in sorted(month_dir.glob("*.json")):
             try:
-                temp_file.unlink()
-            except OSError:
-                pass
-        raise
+                day_num = f"{int(json_file.stem):02d}"
+                date_key = f"{year_str}-{month_str}-{day_num}"
+                with open(json_file, "r", encoding="utf-8") as f:
+                    day_data = json.load(f)
+
+                sessions = day_data.get("sessions", [])
+                events = day_data.get("events", [])
+                duration = int(day_data.get("totalDurationSeconds", 0))
+
+                modules_set = set()
+                for s in sessions:
+                    if s.get("module"):
+                        modules_set.add(s["module"])
+                for e in events:
+                    if e.get("module"):
+                        modules_set.add(e["module"])
+
+                summary[date_key] = {
+                    "date": date_key,
+                    "totalDuration": duration,
+                    "totalDurationSeconds": duration,
+                    "eventCount": len(events),
+                    "sessionCount": len(sessions),
+                    "modules": sorted(list(modules_set))
+                }
+            except Exception as fe:
+                print(f"Error reading timeline file {json_file}: {fe}")
+                continue
+
+        return summary
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to read month timeline: {str(e)}"
+        )
+
+
+@app.post("/api/timeline/event")
+async def record_timeline_event(payload: Dict[str, Any] = Body(...)):
+    """
+    Extracts target date (defaulting to today), loads timeline/{YYYY}/{MM}/{DD}.json,
+    appends the session/event telemetry, updates totalDurationSeconds, and saves atomically.
+    """
+    try:
+        events: List[Dict[str, Any]] = []
+        sessions: List[Dict[str, Any]] = []
+
+        if "events" in payload and isinstance(payload["events"], list):
+            events.extend(payload["events"])
+        elif "event" in payload and isinstance(payload["event"], dict):
+            events.append(payload["event"])
+
+        if "sessions" in payload and isinstance(payload["sessions"], list):
+            sessions.extend(payload["sessions"])
+        elif "session" in payload and isinstance(payload["session"], dict):
+            sessions.append(payload["session"])
+
+        # Fallback if payload itself is a single event or session object
+        if not events and not sessions:
+            if "durationSeconds" in payload or "startTime" in payload:
+                sessions.append(payload)
+            elif "action" in payload or "module" in payload or "id" in payload:
+                events.append(payload)
+
+        # Determine target date (YYYY-MM-DD)
+        target_date = payload.get("date")
+        if not target_date:
+            if events and events[0].get("timestamp"):
+                target_date = str(events[0]["timestamp"]).split("T")[0]
+            elif sessions and sessions[0].get("startTime"):
+                target_date = str(sessions[0]["startTime"]).split("T")[0]
+            else:
+                target_date = datetime.now().strftime("%Y-%m-%d")
+
+        target_date = target_date.strip().split("T")[0]
+        day_data = load_day_file(target_date)
+
+        # Ensure unique IDs for new items
+        now_ms = int(datetime.now().timestamp() * 1000)
+        for idx, s in enumerate(sessions):
+            if not s.get("id"):
+                s["id"] = f"ses_{now_ms}_{idx}"
+            day_data["sessions"].append(s)
+
+        for idx, e in enumerate(events):
+            if not e.get("id"):
+                e["id"] = f"evt_{now_ms}_{idx}"
+            day_data["events"].append(e)
+
+        # Recalculate total duration in seconds for this day
+        day_data["totalDurationSeconds"] = sum(
+            int(s.get("durationSeconds", 0)) for s in day_data.get("sessions", [])
+        )
+
+        file_path = get_day_file_path(target_date)
+        atomic_write(file_path, day_data)
+
+        return {
+            "status": "success",
+            "message": "Timeline telemetry recorded successfully",
+            "date": target_date,
+            "totalDurationSeconds": day_data["totalDurationSeconds"],
+            "recordedEvents": len(events),
+            "recordedSessions": len(sessions)
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to record timeline event: {str(e)}"
+        )
+
+
+# Backward-compatible alias for day lookup
+@app.get("/api/timeline/{date_str}")
+async def get_timeline_by_date_alias(date_str: str):
+    return await get_timeline_day(date_str)
 
 
 if __name__ == "__main__":

@@ -11,6 +11,7 @@
  */
 
 import { storage } from './fs-storage.js';
+import { logTimelineEvent, getTimeMachineDate, onTimeMachineChange, formatDateDMY } from './timeline.js';
 
 const NOTE_COLORS = [
   { name: 'Default', value: 'var(--card-bg)' },
@@ -28,7 +29,7 @@ export class NotesController {
     this.activeEditNoteId = null;
 
     // Elements
-    this.container = document.getElementById('notes-tab-view');
+    this.container = document.getElementById('notes-view') || document.getElementById('notes-tab-view');
     this.notesGrid = document.getElementById('notes-masonry-grid');
     this.quickInputCollapsed = document.getElementById('note-quick-collapsed');
     this.quickInputExpanded = document.getElementById('note-quick-expanded');
@@ -38,9 +39,11 @@ export class NotesController {
     this.quickColorBtn = document.getElementById('quick-note-color');
     this.quickPinBtn = document.getElementById('quick-note-pin');
     this.searchInput = document.getElementById('notes-search-input');
+    this.btnCreateNewNote = document.getElementById('btn-create-new-note');
 
     this.selectedQuickColor = NOTE_COLORS[0].value;
     this.isQuickPinned = false;
+    this.isModalPinned = false;
 
     // Modal elements
     this.editModal = document.getElementById('note-edit-modal');
@@ -49,23 +52,34 @@ export class NotesController {
     this.modalCloseBtn = document.getElementById('modal-note-close');
     this.modalDeleteBtn = document.getElementById('modal-note-delete');
     this.modalPinBtn = document.getElementById('modal-note-pin');
-
     this.initEvents();
+
+    // Re-render notes when Time Machine date changes
+    onTimeMachineChange(() => {
+      this.render();
+    });
   }
 
   initEvents() {
+    // Top bar + New Note button (stop propagation so document click doesn't immediately close it)
+    this.btnCreateNewNote?.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.openCreateNote();
+    });
+
     // Quick Note expand / collapse
-    this.quickInputCollapsed?.addEventListener('click', () => {
-      this.quickInputCollapsed.classList.add('hidden');
-      this.quickInputExpanded.classList.remove('hidden');
-      this.quickBodyInput?.focus();
+    this.quickInputCollapsed?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.expandQuickNote();
     });
 
     // Close quick note when clicking outside
     document.addEventListener('click', (e) => {
       if (!this.quickInputExpanded || this.quickInputExpanded.classList.contains('hidden')) return;
       const box = document.getElementById('quick-note-box');
-      if (box && !box.contains(e.target)) {
+      const createBtn = document.getElementById('btn-create-new-note');
+      if (box && !box.contains(e.target) && (!createBtn || !createBtn.contains(e.target))) {
         this.saveQuickNoteAndCollapse();
       }
     });
@@ -88,20 +102,66 @@ export class NotesController {
     });
 
     // Modal Events
-    this.modalCloseBtn?.addEventListener('click', () => this.closeEditModal());
-    this.modalDeleteBtn?.addEventListener('click', () => this.deleteActiveModalNote());
-    this.modalPinBtn?.addEventListener('click', () => this.toggleActiveModalPin());
+    this.modalCloseBtn?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.closeEditModal();
+    });
+    this.modalDeleteBtn?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.deleteActiveModalNote();
+    });
+    this.modalPinBtn?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.toggleActiveModalPin();
+    });
+
+    // Close modal when clicking backdrop overlay
+    this.editModal?.addEventListener('click', (e) => {
+      if (e.target === this.editModal) {
+        this.closeEditModal();
+      }
+    });
 
     // Autosave in edit modal on typing
     const handleModalInput = () => {
-      if (!this.activeEditNoteId) return;
+      const title = (this.modalTitle?.value || '').trim();
+      const content = this.modalBody?.value || '';
+
+      if (!this.activeEditNoteId) {
+        // First keystrokes in a new note modal -> create the note record
+        if (title || content.trim()) {
+          const newNote = {
+            id: 'note_' + Date.now(),
+            title: title || 'Untitled Note',
+            content: content,
+            color: NOTE_COLORS[0].value,
+            pinned: !!this.isModalPinned,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          };
+          this.activeEditNoteId = newNote.id;
+          this.getNotes().unshift(newNote);
+          storage.scheduleSave();
+          this.render();
+          if (this.modalDeleteBtn) this.modalDeleteBtn.style.display = 'inline-flex';
+          logTimelineEvent('notes', 'CREATE', newNote.id, newNote.title, newNote.content);
+        }
+        return;
+      }
+
       const note = this.getNotes().find(n => n.id === this.activeEditNoteId);
       if (note) {
-        note.title = this.modalTitle.value.trim();
-        note.content = this.modalBody.value;
+        note.title = title;
+        note.content = content;
         note.updatedAt = new Date().toISOString();
         storage.scheduleSave();
         this.render(); // update card preview in background
+
+        // Debounced telemetry logging
+        clearTimeout(this._modalLogTimer);
+        this._modalLogTimer = setTimeout(() => {
+          logTimelineEvent('notes', 'EDIT', note.id, note.title, note.content);
+        }, 1500);
       }
     };
 
@@ -142,6 +202,7 @@ export class NotesController {
 
       this.getNotes().unshift(newNote);
       storage.scheduleSave();
+      logTimelineEvent('notes', 'CREATE', newNote.id, newNote.title, newNote.content);
     }
 
     // Reset inputs
@@ -155,6 +216,26 @@ export class NotesController {
     this.quickInputCollapsed?.classList.remove('hidden');
 
     this.render();
+  }
+
+  expandQuickNote() {
+    if (this.quickInputCollapsed && this.quickInputExpanded) {
+      this.quickInputCollapsed.classList.add('hidden');
+      this.quickInputExpanded.classList.remove('hidden');
+      const box = document.getElementById('quick-note-box');
+      if (box) {
+        box.classList.add('quick-note-active');
+      }
+      this.quickTitleInput?.focus();
+    }
+  }
+
+  openCreateNote() {
+    // If quick note box was open with unsaved text, collapse and save it first
+    if (this.quickInputExpanded && !this.quickInputExpanded.classList.contains('hidden')) {
+      this.saveQuickNoteAndCollapse();
+    }
+    this.openEditModal(null);
   }
 
   render() {
@@ -176,7 +257,7 @@ export class NotesController {
         <div class="empty-notes-prompt">
           <div class="empty-icon">📝</div>
           <h3>${this.searchQuery ? 'No matching notes found' : 'No notes yet'}</h3>
-          <p>${this.searchQuery ? 'Try another search keyword.' : 'Click the input box above to jot down a thought, reminder, or idea.'}</p>
+          <p>${this.searchQuery ? 'Try another search keyword.' : 'Click the input box above or the "+ New Note" button to jot down an idea.'}</p>
         </div>
       `;
       return;
@@ -197,33 +278,53 @@ export class NotesController {
       pinned.forEach(n => pinnedGrid.appendChild(this.createNoteCard(n)));
       this.notesGrid.appendChild(pinnedGrid);
 
-      if (others.length > 0) {
-        const othersHeader = document.createElement('div');
-        othersHeader.className = 'notes-section-heading';
-        othersHeader.innerHTML = `<span>OTHERS</span>`;
-        this.notesGrid.appendChild(othersHeader);
-      }
+      const othersHeader = document.createElement('div');
+      othersHeader.className = 'notes-section-heading';
+      othersHeader.innerHTML = `<span>OTHERS</span>`;
+      this.notesGrid.appendChild(othersHeader);
     }
 
-    if (others.length > 0) {
-      const othersGrid = document.createElement('div');
-      othersGrid.className = 'notes-cards-subgrid';
-      others.forEach(n => othersGrid.appendChild(this.createNoteCard(n)));
-      this.notesGrid.appendChild(othersGrid);
-    }
+    // Always render othersGrid with a dedicated "+ New Note" card followed by existing notes
+    const othersGrid = document.createElement('div');
+    othersGrid.className = 'notes-cards-subgrid';
+    othersGrid.appendChild(this.createAddNoteCard());
+    others.forEach(n => othersGrid.appendChild(this.createNoteCard(n)));
+    this.notesGrid.appendChild(othersGrid);
+  }
+
+  createAddNoteCard() {
+    const card = document.createElement('div');
+    card.className = 'note-card note-card-create';
+    card.title = 'Create a new note';
+    card.innerHTML = `
+      <div class="note-create-card-inner">
+        <span class="note-create-icon">＋</span>
+        <span class="note-create-label">New Note</span>
+      </div>
+    `;
+    card.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.openCreateNote();
+    });
+    return card;
   }
 
   createNoteCard(note) {
+    const timeMachineDate = getTimeMachineDate();
+    let tmClass = '';
+    if (timeMachineDate) {
+      const isMatch = (note.createdAt && note.createdAt.startsWith(timeMachineDate)) || 
+                      (note.updatedAt && note.updatedAt.startsWith(timeMachineDate));
+      tmClass = isMatch ? 'time-machine-match' : 'time-machine-dimmed';
+    }
+
     const card = document.createElement('div');
-    card.className = `note-card ${note.pinned ? 'is-pinned' : ''}`;
+    card.className = `note-card ${note.pinned ? 'is-pinned' : ''} ${tmClass}`;
     if (note.color && note.color !== NOTE_COLORS[0].value) {
       card.style.backgroundColor = note.color;
     }
 
-    const lastEdited = new Date(note.updatedAt || note.createdAt).toLocaleDateString(undefined, {
-      month: 'short',
-      day: 'numeric'
-    });
+    const lastEdited = formatDateDMY(note.updatedAt || note.createdAt);
 
     card.innerHTML = `
       <div class="note-card-pin ${note.pinned ? 'active' : ''}" title="${note.pinned ? 'Unpin' : 'Pin note'}">
@@ -271,22 +372,73 @@ export class NotesController {
     return card;
   }
 
-  openEditModal(noteId) {
-    const note = this.getNotes().find(n => n.id === noteId);
-    if (!note) return;
+  openEditModal(noteId = null) {
+    if (noteId) {
+      const note = this.getNotes().find(n => n.id === noteId);
+      if (!note) return;
 
-    this.activeEditNoteId = note.id;
-    this.modalTitle.value = note.title || '';
-    this.modalBody.value = note.content || '';
-    this.modalPinBtn.classList.toggle('active', !!note.pinned);
+      this.activeEditNoteId = note.id;
+      this.modalTitle.value = note.title || '';
+      this.modalBody.value = note.content || '';
+      this.isModalPinned = !!note.pinned;
+      this.modalPinBtn?.classList.toggle('active', this.isModalPinned);
+      if (this.modalDeleteBtn) this.modalDeleteBtn.style.display = 'inline-flex';
+    } else {
+      this.activeEditNoteId = null;
+      this.modalTitle.value = '';
+      this.modalBody.value = '';
+      this.isModalPinned = false;
+      this.modalPinBtn?.classList.remove('active');
+      if (this.modalDeleteBtn) this.modalDeleteBtn.style.display = 'none';
+    }
 
-    this.editModal.classList.remove('hidden');
-    this.modalBody.focus();
+    this.editModal?.classList.remove('hidden');
+    setTimeout(() => {
+      if (!noteId) {
+        this.modalTitle?.focus();
+      } else {
+        this.modalBody?.focus();
+      }
+    }, 50);
   }
 
   closeEditModal() {
+    const title = (this.modalTitle?.value || '').trim();
+    const content = (this.modalBody?.value || '').trim();
+
+    if (!this.activeEditNoteId) {
+      if (title || content) {
+        const newNote = {
+          id: 'note_' + Date.now(),
+          title: title || 'Untitled Note',
+          content: content,
+          color: NOTE_COLORS[0].value,
+          pinned: !!this.isModalPinned,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
+        this.getNotes().unshift(newNote);
+        storage.scheduleSave();
+        logTimelineEvent('notes', 'CREATE', newNote.id, newNote.title, newNote.content);
+      }
+    } else {
+      const notes = this.getNotes();
+      const idx = notes.findIndex(n => n.id === this.activeEditNoteId);
+      if (idx !== -1) {
+        if (!title && !content) {
+          notes.splice(idx, 1);
+          storage.scheduleSave();
+        } else {
+          notes[idx].title = title || 'Untitled Note';
+          notes[idx].content = content;
+          notes[idx].pinned = !!this.isModalPinned;
+          notes[idx].updatedAt = new Date().toISOString();
+          storage.scheduleSave();
+        }
+      }
+    }
     this.activeEditNoteId = null;
-    this.editModal.classList.add('hidden');
+    this.editModal?.classList.add('hidden');
     this.render();
   }
 

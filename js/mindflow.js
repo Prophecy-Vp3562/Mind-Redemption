@@ -8,7 +8,8 @@
  *            └── Blocks (1 Main block + 0 to 4 Side blocks in Cross/Plus layout)
  */
 
-import { storage } from './fs-storage.js';
+import { storage, getActiveWorkspace, setActiveWorkspace } from './fs-storage.js';
+import { logTimelineEvent, trackSession, getTimeMachineDate, onTimeMachineChange, formatDateDMY } from './timeline.js';
 
 // Superscript marker helpers
 const SUPERSCRIPTS = ['¹', '²', '³', '⁴', '⁵', '⁶', '⁷', '⁸', '⁹', '¹⁰', '¹¹', '¹²', '¹³', '¹⁴', '¹⁵'];
@@ -19,6 +20,10 @@ export class MindFlowController {
     this.currentNoteId = null;
     this.currentPageIndex = 0;
     this.zoomedBlockId = null;
+
+    // Layout Customization State
+    this.isLayoutEditing = false;
+    this.selectedBlockKey = null;
 
     // Elements
     this.shelfView = document.getElementById('mindflow-shelf-view');
@@ -31,7 +36,20 @@ export class MindFlowController {
     this.prevPageBtn = document.getElementById('mf-prev-page');
     this.nextPageBtn = document.getElementById('mf-next-page');
 
+    this.btnToggleLayout = document.getElementById('btn-toggle-layout');
+    this.btnResetLayout = document.getElementById('btn-reset-layout');
+
     this.initEvents();
+    this.initLayoutModeEvents();
+
+    // Re-render shelf/workspace when Time Machine date changes
+    onTimeMachineChange(() => {
+      if (this.workspaceView && !this.workspaceView.classList.contains('hidden')) {
+        this.renderWorkspace();
+      } else {
+        this.render();
+      }
+    });
   }
 
   initEvents() {
@@ -69,15 +87,277 @@ export class MindFlowController {
       }
     });
 
-    // Keyboard shortcuts: Esc to exit zoom, Left/Right for slides when not typing in textarea
+    // Keyboard shortcuts: Esc to exit zoom / deselect
     window.addEventListener('keydown', (e) => {
       if (!this.workspaceView || this.workspaceView.classList.contains('hidden')) return;
 
       if (e.key === 'Escape') {
         if (this.zoomedBlockId) {
           this.unzoomBlock();
+        } else if (this.isLayoutEditing) {
+          this.deselectAllBlocks();
         }
       }
+    });
+  }
+
+  initLayoutModeEvents() {
+    this.btnToggleLayout?.addEventListener('click', () => {
+      this.toggleLayoutMode();
+    });
+
+    this.btnResetLayout?.addEventListener('click', () => {
+      this.resetLayoutToGrid();
+    });
+  }
+
+  toggleLayoutMode() {
+    if (this.isLayoutEditing) {
+      this.finishLayoutEditing();
+    } else {
+      this.startLayoutEditing();
+    }
+  }
+
+  startLayoutEditing() {
+    const page = this.getActivePage();
+    if (!page) return;
+
+    this.isLayoutEditing = true;
+
+    if (this.btnToggleLayout) {
+      this.btnToggleLayout.textContent = '✓ Done';
+      this.btnToggleLayout.classList.add('btn-primary');
+    }
+    this.btnResetLayout?.classList.remove('hidden');
+    this.crossLayout?.classList.add('layout-editing-active');
+
+    // Convert grid-positioned blocks without customLayout to initial rendered pixel coordinates
+    const containerRect = this.crossLayout.getBoundingClientRect();
+    const cards = this.crossLayout.querySelectorAll('.mf-block-card');
+    cards.forEach(card => {
+      const key = card.dataset.blockKey;
+      if (page.blocks[key] && !page.blocks[key].customLayout) {
+        const cardRect = card.getBoundingClientRect();
+        const x = Math.round(cardRect.left - containerRect.left);
+        const y = Math.round(cardRect.top - containerRect.top);
+        const width = Math.round(cardRect.width);
+        const height = Math.round(cardRect.height);
+
+        card.style.left = `${x}px`;
+        card.style.top = `${y}px`;
+        card.style.width = `${width}px`;
+        card.style.height = `${height}px`;
+        card.classList.add('has-custom-layout');
+      }
+    });
+
+    // Select the main block by default
+    this.selectBlockForEditing('main');
+  }
+
+  finishLayoutEditing() {
+    const page = this.getActivePage();
+    if (page) {
+      const cards = this.crossLayout.querySelectorAll('.mf-block-card');
+      cards.forEach(card => {
+        const key = card.dataset.blockKey;
+        if (page.blocks[key]) {
+          page.blocks[key].customLayout = {
+            x: Math.round(card.offsetLeft),
+            y: Math.round(card.offsetTop),
+            width: Math.round(card.offsetWidth),
+            height: Math.round(card.offsetHeight)
+          };
+        }
+      });
+
+      const note = this.getActiveNote();
+      if (note) note.updatedAt = new Date().toISOString();
+      storage.scheduleSave();
+    }
+
+    this.isLayoutEditing = false;
+    if (this.btnToggleLayout) {
+      this.btnToggleLayout.textContent = '📐 Edit Layout';
+      this.btnToggleLayout.classList.remove('btn-primary');
+    }
+    this.btnResetLayout?.classList.add('hidden');
+    this.crossLayout?.classList.remove('layout-editing-active');
+    this.deselectAllBlocks();
+    this.renderWorkspace();
+  }
+
+  resetLayoutToGrid() {
+    if (!confirm('Reset all blocks on this page to the default grid layout?')) return;
+
+    const page = this.getActivePage();
+    if (page) {
+      Object.keys(page.blocks).forEach(k => {
+        delete page.blocks[k].customLayout;
+      });
+      const note = this.getActiveNote();
+      if (note) note.updatedAt = new Date().toISOString();
+      storage.scheduleSave();
+    }
+
+    this.isLayoutEditing = false;
+    if (this.btnToggleLayout) {
+      this.btnToggleLayout.textContent = '📐 Edit Layout';
+      this.btnToggleLayout.classList.remove('btn-primary');
+    }
+    this.btnResetLayout?.classList.add('hidden');
+    this.crossLayout?.classList.remove('layout-editing-active');
+    this.deselectAllBlocks();
+    this.renderWorkspace();
+  }
+
+  selectBlockForEditing(blockKey) {
+    if (!this.isLayoutEditing) return;
+    this.deselectAllBlocks();
+    this.selectedBlockKey = blockKey;
+
+    const blockCard = this.crossLayout.querySelector(`.mf-block-card[data-block-key="${blockKey}"]`);
+    if (!blockCard) return;
+
+    blockCard.classList.add('is-selected');
+
+    // Attach 8 PowerPoint-style resize handles
+    const handles = ['n', 's', 'w', 'e', 'nw', 'ne', 'sw', 'se'];
+    handles.forEach(dir => {
+      const handle = document.createElement('div');
+      handle.className = `resize-handle handle-${dir}`;
+      handle.dataset.direction = dir;
+      this.attachHandleEvents(handle, blockCard);
+      blockCard.appendChild(handle);
+    });
+
+    // Attach dragging to the block
+    this.attachBlockDragEvents(blockCard);
+  }
+
+  deselectAllBlocks() {
+    this.selectedBlockKey = null;
+    if (!this.crossLayout) return;
+    this.crossLayout.querySelectorAll('.mf-block-card').forEach(card => {
+      card.classList.remove('is-selected');
+      card.querySelectorAll('.resize-handle, .resize-dim-badge').forEach(el => el.remove());
+    });
+  }
+
+  attachHandleEvents(handle, blockCard) {
+    handle.addEventListener('pointerdown', (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      handle.setPointerCapture(e.pointerId);
+
+      const startX = e.clientX;
+      const startY = e.clientY;
+      const startLeft = blockCard.offsetLeft;
+      const startTop = blockCard.offsetTop;
+      const startWidth = blockCard.offsetWidth;
+      const startHeight = blockCard.offsetHeight;
+      const dir = handle.dataset.direction;
+
+      // Dimension badge showing live width and height
+      let badge = blockCard.querySelector('.resize-dim-badge');
+      if (!badge) {
+        badge = document.createElement('div');
+        badge.className = 'resize-dim-badge';
+        blockCard.appendChild(badge);
+      }
+      badge.textContent = `${startWidth} × ${startHeight} px`;
+
+      const onPointerMove = (moveEv) => {
+        const dx = moveEv.clientX - startX;
+        const dy = moveEv.clientY - startY;
+
+        let newWidth = startWidth;
+        let newHeight = startHeight;
+        let newLeft = startLeft;
+        let newTop = startTop;
+
+        const MIN_W = 180;
+        const MIN_H = 120;
+
+        if (dir.includes('e')) {
+          newWidth = Math.max(MIN_W, startWidth + dx);
+        } else if (dir.includes('w')) {
+          newWidth = Math.max(MIN_W, startWidth - dx);
+          newLeft = startLeft + (startWidth - newWidth);
+        }
+
+        if (dir.includes('s')) {
+          newHeight = Math.max(MIN_H, startHeight + dy);
+        } else if (dir.includes('n')) {
+          newHeight = Math.max(MIN_H, startHeight - dy);
+          newTop = startTop + (startHeight - newHeight);
+        }
+
+        blockCard.classList.add('has-custom-layout');
+        blockCard.style.left = `${newLeft}px`;
+        blockCard.style.top = `${newTop}px`;
+        blockCard.style.width = `${newWidth}px`;
+        blockCard.style.height = `${newHeight}px`;
+
+        if (badge) {
+          badge.textContent = `${Math.round(newWidth)} × ${Math.round(newHeight)} px`;
+        }
+      };
+
+      const onPointerUp = (upEv) => {
+        handle.removeEventListener('pointermove', onPointerMove);
+        handle.removeEventListener('pointerup', onPointerUp);
+        handle.removeEventListener('pointercancel', onPointerUp);
+        try { handle.releasePointerCapture(upEv.pointerId); } catch (_) {}
+        badge?.remove();
+      };
+
+      handle.addEventListener('pointermove', onPointerMove);
+      handle.addEventListener('pointerup', onPointerUp);
+      handle.addEventListener('pointercancel', onPointerUp);
+    });
+  }
+
+  attachBlockDragEvents(blockCard) {
+    if (blockCard._hasDragHandler) return;
+    blockCard._hasDragHandler = true;
+
+    blockCard.addEventListener('pointerdown', (e) => {
+      if (!this.isLayoutEditing) return;
+      if (e.target.closest('.resize-handle')) return; // handled by resize handle
+
+      this.selectBlockForEditing(blockCard.dataset.blockKey);
+
+      e.preventDefault();
+      blockCard.setPointerCapture(e.pointerId);
+
+      const startX = e.clientX;
+      const startY = e.clientY;
+      const startLeft = blockCard.offsetLeft;
+      const startTop = blockCard.offsetTop;
+
+      const onPointerMove = (moveEv) => {
+        const dx = moveEv.clientX - startX;
+        const dy = moveEv.clientY - startY;
+        const newLeft = Math.max(0, startLeft + dx);
+        const newTop = Math.max(0, startTop + dy);
+
+        blockCard.classList.add('has-custom-layout');
+        blockCard.style.left = `${newLeft}px`;
+        blockCard.style.top = `${newTop}px`;
+      };
+
+      const onPointerUp = (upEv) => {
+        blockCard.removeEventListener('pointermove', onPointerMove);
+        blockCard.removeEventListener('pointerup', onPointerUp);
+        blockCard.removeEventListener('pointercancel', onPointerUp);
+        try { blockCard.releasePointerCapture(upEv.pointerId); } catch (_) {}
+      };
+
+      blockCard.addEventListener('pointermove', onPointerMove);
+      blockCard.addEventListener('pointerup', onPointerUp);
+      blockCard.addEventListener('pointercancel', onPointerUp);
     });
   }
 
@@ -135,13 +415,17 @@ export class MindFlowController {
     }
 
     notes.forEach(note => {
+      const tmDate = getTimeMachineDate();
+      let tmClass = '';
+      if (tmDate) {
+        const isMatch = (note.updatedAt && note.updatedAt.startsWith(tmDate)) || 
+                        (note.createdAt && note.createdAt.startsWith(tmDate));
+        tmClass = isMatch ? 'time-machine-match' : 'time-machine-dimmed';
+      }
+
       const card = document.createElement('div');
-      card.className = 'mf-note-card';
-      const lastEdited = new Date(note.updatedAt || note.createdAt).toLocaleDateString(undefined, {
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric'
-      });
+      card.className = `mf-note-card ${tmClass}`;
+      const lastEdited = formatDateDMY(note.updatedAt || note.createdAt);
       const pageCount = note.pages ? note.pages.length : 1;
 
       card.innerHTML = `
@@ -191,12 +475,14 @@ export class MindFlowController {
     this.currentNoteId = noteId;
     this.currentPageIndex = 0;
     this.zoomedBlockId = null;
+    trackSession('mindflow', `${noteId}:0`);
     this.renderWorkspace();
   }
 
   closeNote() {
     this.currentNoteId = null;
     this.zoomedBlockId = null;
+    trackSession('mindflow', 'shelf');
     this.renderShelf();
   }
 
@@ -217,6 +503,7 @@ export class MindFlowController {
 
     this.getNotes().unshift(newNote);
     storage.scheduleSave();
+    logTimelineEvent('mindflow', 'CREATE', newNote.id, newNote.title, 'New Mind Flow Book');
     this.openNote(newNote.id);
   }
 
@@ -254,10 +541,10 @@ export class MindFlowController {
     };
 
     const sideDefaultTitles = [
-      'Side 1 (Assumptions)',
-      'Side 2 (Counter-arguments)',
-      'Side 3 (Emotional Context)',
-      'Side 4 (Alternative Hypotheses)'
+      'Side 1 (Top-Left: Assumptions)',
+      'Side 2 (Top-Right: Counter-arguments)',
+      'Side 3 (Bottom-Left: Emotional Context)',
+      'Side 4 (Bottom-Right: Alternative Hypotheses)'
     ];
 
     for (let i = 1; i <= sideBlockCount; i++) {
@@ -314,6 +601,7 @@ export class MindFlowController {
       this.zoomedBlockId = null;
 
       storage.scheduleSave();
+      logTimelineEvent('mindflow', 'CREATE', newPage.id, `Slide ${note.pages.length}`, 'New Mind Flow Slide');
       this.renderWorkspace();
     };
 
@@ -345,9 +633,11 @@ export class MindFlowController {
 
   // --- Page Navigation ---
   goToPrevPage() {
-    if (this.currentPageIndex > 0) {
+    const note = this.getActiveNote();
+    if (note && this.currentPageIndex > 0) {
       this.currentPageIndex--;
       this.zoomedBlockId = null;
+      trackSession('mindflow', `${this.currentNoteId}:${this.currentPageIndex}`);
       this.renderWorkspace();
     }
   }
@@ -357,6 +647,7 @@ export class MindFlowController {
     if (note && this.currentPageIndex < note.pages.length - 1) {
       this.currentPageIndex++;
       this.zoomedBlockId = null;
+      trackSession('mindflow', `${this.currentNoteId}:${this.currentPageIndex}`);
       this.renderWorkspace();
     }
   }
@@ -400,9 +691,18 @@ export class MindFlowController {
     if (!this.slideStrip) return;
     this.slideStrip.innerHTML = '';
 
+    const tmDate = getTimeMachineDate();
+
     note.pages.forEach((page, idx) => {
+      let tmClass = '';
+      if (tmDate) {
+        const isMatch = (note.updatedAt && note.updatedAt.startsWith(tmDate)) || 
+                        (note.createdAt && note.createdAt.startsWith(tmDate));
+        tmClass = isMatch ? 'time-machine-match' : 'time-machine-dimmed';
+      }
+
       const slideItem = document.createElement('div');
-      slideItem.className = `slide-thumb ${idx === this.currentPageIndex ? 'active' : ''}`;
+      slideItem.className = `slide-thumb ${idx === this.currentPageIndex ? 'active' : ''} ${tmClass}`;
       slideItem.innerHTML = `
         <div class="slide-thumb-number">${idx + 1}</div>
         <div class="slide-thumb-preview count-${page.sideBlockCount}">
@@ -431,7 +731,7 @@ export class MindFlowController {
     this.crossLayout.innerHTML = '';
 
     const count = page.sideBlockCount;
-    this.crossLayout.className = `mf-cross-grid side-count-${count} ${this.zoomedBlockId ? 'has-zoomed-block' : ''}`;
+    this.crossLayout.className = `mf-cross-grid side-count-${count} ${this.zoomedBlockId ? 'has-zoomed-block' : ''} ${this.isLayoutEditing ? 'layout-editing-active' : ''}`;
 
     const blocks = page.blocks;
     if (!blocks.main) {
@@ -467,12 +767,52 @@ export class MindFlowController {
       });
       this.crossLayout.appendChild(sideEl);
     }
+
+    // Canvas background click listener: resets focus so Main is on top by default
+    const canvasWrap = this.crossLayout.closest('.workspace-canvas-scroll');
+    if (canvasWrap && !canvasWrap._hasCanvasListener) {
+      canvasWrap._hasCanvasListener = true;
+      canvasWrap.addEventListener('pointerdown', (e) => {
+        if (!e.target.closest('.mf-block-card')) {
+          if (this.isLayoutEditing) {
+            this.deselectAllBlocks();
+          } else {
+            this.crossLayout.querySelectorAll('.mf-block-card').forEach(card => {
+              card.classList.remove('is-active-focused');
+            });
+          }
+        }
+      });
+    }
+
+    // If still in layout editing, re-select active block
+    if (this.isLayoutEditing && this.selectedBlockKey) {
+      this.selectBlockForEditing(this.selectedBlockKey);
+    }
   }
 
   createBlockElement({ blockKey, blockData, isMain, sideIndex, markers, isZoomed }) {
     const blockCard = document.createElement('div');
     blockCard.className = `mf-block-card ${isMain ? 'block-main' : `block-side block-side-${sideIndex}`} ${isZoomed ? 'zoomed-fullscreen' : ''}`;
     blockCard.dataset.blockKey = blockKey;
+
+    // Apply custom layout coordinates if present
+    if (blockData.customLayout) {
+      blockCard.classList.add('has-custom-layout');
+      blockCard.style.left = `${blockData.customLayout.x}px`;
+      blockCard.style.top = `${blockData.customLayout.y}px`;
+      blockCard.style.width = `${blockData.customLayout.width}px`;
+      blockCard.style.height = `${blockData.customLayout.height}px`;
+    }
+
+    // Pointer listener for selecting block in layout mode
+    blockCard.addEventListener('pointerdown', (e) => {
+      if (this.isLayoutEditing) {
+        if (!e.target.closest('.resize-handle')) {
+          this.selectBlockForEditing(blockKey);
+        }
+      }
+    });
 
     // Header with editable title, zoom button, and reference tag / marker inserter
     const header = document.createElement('div');
@@ -586,6 +926,16 @@ export class MindFlowController {
       if (note) note.updatedAt = new Date().toISOString();
       storage.scheduleSave();
 
+      // Debounced telemetry logging
+      clearTimeout(this._blockLogTimer);
+      this._blockLogTimer = setTimeout(() => {
+        const activeNote = this.getActiveNote();
+        const activePage = this.getActivePage();
+        if (activeNote && activePage) {
+          logTimelineEvent('mindflow', 'EDIT', `${activeNote.id}_${activePage.id}_${blockKey}`, `${activeNote.title} (${blockKey})`, blockData.content);
+        }
+      }, 1500);
+
       // If main block content changed, update markers for side block dropdowns
       if (isMain) {
         this.refreshSideBlockReferences();
@@ -603,6 +953,34 @@ export class MindFlowController {
       // Don't trigger if double-clicking inside the input title
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
       this.toggleZoom(blockKey);
+    });
+
+    // Focus-based stacking (dynamic overlap):
+    // By default, Main sits on top. When user clicks into any block to write (Main or Side),
+    // that block moves to the front (highest z-index).
+    // When focus is lost, layout returns to default state — Main on top.
+    const bringToFront = () => {
+      if (this.zoomedBlockId) return;
+      this.crossLayout.querySelectorAll('.mf-block-card').forEach(card => {
+        card.classList.remove('is-active-focused');
+      });
+      blockCard.classList.add('is-active-focused');
+    };
+
+    blockCard.addEventListener('pointerdown', () => {
+      bringToFront();
+    });
+
+    blockCard.addEventListener('focusin', () => {
+      bringToFront();
+    });
+
+    blockCard.addEventListener('focusout', () => {
+      setTimeout(() => {
+        if (!blockCard.contains(document.activeElement)) {
+          blockCard.classList.remove('is-active-focused');
+        }
+      }, 50);
     });
 
     return blockCard;

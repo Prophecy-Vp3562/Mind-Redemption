@@ -1,9 +1,10 @@
 /**
- * Diary Tab Module
- * Fully functional chronological daily reflection workspace for Thought Redemption.
+ * Diary Component (Refactored)
+ * Fully functional chronological daily reflection workspace for Mind Redemption.
  */
 
 import { getNamespace, saveStorageData } from './fs-storage.js';
+import { logTimelineEvent, getTimeMachineDate, onTimeMachineChange, formatDateDisplay, formatTimeDisplay } from './timeline.js';
 
 /**
  * Format Date object to local YYYY-MM-DD
@@ -24,15 +25,10 @@ function parseLocalDateString(dateStr) {
 }
 
 /**
- * Format Date to human-readable string: e.g. "Sunday, September 20, 2026"
+ * Format Date to human-readable string: e.g. "20 September 2026"
  */
 function formatDisplayDate(date) {
-  return date.toLocaleDateString(undefined, {
-    weekday: 'long',
-    month: 'long',
-    day: 'numeric',
-    year: 'numeric'
-  });
+  return formatDateDisplay(date, false);
 }
 
 export class DiaryController {
@@ -57,7 +53,7 @@ export function initDiary(containerEl = null, initialDate = null) {
   const container = containerEl || document.getElementById('diary-view') || document.getElementById('diary-tab-view');
   if (!container) return;
 
-  let activeDateStr = initialDate || toLocalDateString();
+  let activeDateStr = initialDate || getTimeMachineDate() || toLocalDateString();
 
   // Helper to fetch diary namespace
   function getDiaryState() {
@@ -210,23 +206,24 @@ export function initDiary(containerEl = null, initialDate = null) {
     dateTitle.textContent = formatDisplayDate(dateObj);
     datePicker.value = activeDateStr;
 
-    // Relative badge
+    // Relative badge with standardized Day Month Year display
+    const dateFormatted = formatDateDisplay(dateObj);
     if (activeDateStr === todayStr) {
-      relativeBadge.textContent = 'TODAY';
+      relativeBadge.textContent = `TODAY — ${dateFormatted}`;
       relativeBadge.className = 'diary-relative-badge badge-today';
     } else {
       const diffDays = Math.round((dateObj - parseLocalDateString(todayStr)) / (1000 * 60 * 60 * 24));
       if (diffDays === -1) {
-        relativeBadge.textContent = 'YESTERDAY';
+        relativeBadge.textContent = `YESTERDAY — ${dateFormatted}`;
         relativeBadge.className = 'diary-relative-badge badge-past';
       } else if (diffDays === 1) {
-        relativeBadge.textContent = 'TOMORROW';
+        relativeBadge.textContent = `TOMORROW — ${dateFormatted}`;
         relativeBadge.className = 'diary-relative-badge badge-future';
       } else if (diffDays < 0) {
-        relativeBadge.textContent = `${Math.abs(diffDays)} DAYS AGO`;
+        relativeBadge.textContent = `${Math.abs(diffDays)} DAYS AGO — ${dateFormatted}`;
         relativeBadge.className = 'diary-relative-badge badge-past';
       } else {
-        relativeBadge.textContent = `IN ${diffDays} DAYS`;
+        relativeBadge.textContent = `IN ${diffDays} DAYS — ${dateFormatted}`;
         relativeBadge.className = 'diary-relative-badge badge-future';
       }
     }
@@ -239,9 +236,9 @@ export function initDiary(containerEl = null, initialDate = null) {
     autoResize(morningInput);
     autoResize(eveningInput);
 
-    // Update timestamp
+    // Update timestamp in 12-hour AM/PM format
     if (entry.updatedAt) {
-      const lastModified = new Date(entry.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const lastModified = formatTimeDisplay(entry.updatedAt);
       updatedStamp.textContent = `Last modified for this date at ${lastModified}`;
     } else {
       updatedStamp.textContent = 'Unsaved entry';
@@ -262,7 +259,7 @@ export function initDiary(containerEl = null, initialDate = null) {
 
     saveStorageData('diary', diary);
 
-    const lastModified = new Date(entry.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const lastModified = formatTimeDisplay(entry.updatedAt);
     updatedStamp.textContent = `Saved at ${lastModified}`;
   }
 
@@ -311,7 +308,14 @@ export function initDiary(containerEl = null, initialDate = null) {
 
     saveStorageData('diary', diary);
 
-    const lastModified = new Date(entry.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    // Debounced timeline telemetry event logging
+    clearTimeout(handleInput._debounceTimer);
+    handleInput._debounceTimer = setTimeout(() => {
+      const summaryText = (entry.morningIntentions || entry.eveningReview || entry.quote || '').slice(0, 120);
+      logTimelineEvent('diary', 'EDIT', activeDateStr, `Diary: ${activeDateStr}`, summaryText);
+    }, 1500);
+
+    const lastModified = formatTimeDisplay(entry.updatedAt);
     updatedStamp.textContent = `Saving... (Last recorded ${lastModified})`;
   };
 
@@ -332,5 +336,13 @@ export function initDiary(containerEl = null, initialDate = null) {
   // Initial UI hydration
   hydrateUI();
 }
+
+// React to Time-Machine date changes
+onTimeMachineChange((tmDate) => {
+  const container = document.getElementById('diary-view') || document.getElementById('diary-tab-view');
+  if (container && container.classList.contains('active')) {
+    initDiary(container, tmDate || toLocalDateString());
+  }
+});
 
 export default initDiary;

@@ -1,5 +1,5 @@
 /**
- * Storage Layer for Thought Redemption
+ * Storage Layer for Mind Redemption
  * Connects directly to the local FastAPI companion server at http://127.0.0.1:8000/api
  */
 
@@ -101,9 +101,7 @@ export async function loadStorageData() {
       }
     };
 
-    const now = new Date();
-    const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    updateSyncStatusUI('saved', `Loaded at ${timeStr}`);
+    updateSyncStatusUI('saved', 'Saved');
 
     return inMemoryState;
   } catch (err) {
@@ -138,9 +136,7 @@ async function executeSave() {
       throw new Error(`Save failed with HTTP status ${res.status}`);
     }
 
-    const now = new Date();
-    const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    updateSyncStatusUI('saved', `Saved at ${timeStr}`);
+    updateSyncStatusUI('saved', 'Saved');
   } catch (err) {
     console.error('saveStorageData network error:', err);
     updateSyncStatusUI('error', 'Server Offline (Run server.py)');
@@ -224,7 +220,7 @@ export const storage = {
     checkServerHealth().then(ok => {
       listener({
         status: ok ? 'connected' : 'unsupported',
-        fileName: 'thought-redemption-data.json'
+        fileName: 'mind-redemption-data.json'
       });
     });
   },

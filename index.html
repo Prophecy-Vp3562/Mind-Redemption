@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Thought Redemption — Personal Metacognition &amp; Notes</title>
+  <title>Mind Redemption — Personal Metacognition &amp; Notes</title>
   <meta name="description" content="Local-first personal thinking, self-questioning, and note-taking tool with multi-block cross layout metacognition.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -20,7 +20,7 @@
         <div class="brand-symbol">
           <span class="symbol-dot"></span>
         </div>
-        <h1 class="brand-title">Thought Redemption</h1>
+        <h1 class="brand-title">Mind Redemption</h1>
       </div>
 
       <!-- Main Navigation Tabs -->
@@ -36,14 +36,28 @@
         </button>
       </nav>
 
-      <!-- Header Controls: Sync Status Badge & Theme Toggle -->
+      <!-- Header Controls: Clock, Timeline & Theme Toggle -->
       <div class="header-actions">
-        <span id="sync-status" class="status-indicator" title="FastAPI Sync Status">Connecting...</span>
+        <span id="header-clock" class="header-clock" title="Current Real-time Clock">00:00:00</span>
+        <button id="timeline-btn" class="btn btn-sm btn-timeline" title="Activity Timeline & Focus Calendar">
+          📅 Timeline
+        </button>
         <button id="theme-toggle-btn" class="theme-btn" title="Toggle Dark/Light Mode" aria-label="Toggle Theme">
           ☀️ Light
         </button>
       </div>
     </header>
+
+    <!-- Option B: Time-Machine Banner -->
+    <div id="time-machine-banner" class="time-machine-banner hidden">
+      <div class="time-machine-content">
+        <span class="time-machine-icon">🕒</span>
+        <span class="time-machine-text">
+          Time Machine: Viewing <strong id="time-machine-date">20 September 2026</strong> &nbsp;|&nbsp; Focus Time: <strong id="time-machine-duration">0 mins</strong>
+        </span>
+      </div>
+      <button id="time-machine-exit-btn" class="time-machine-exit-btn">Exit Filter</button>
+    </div>
 
     <!-- Main View Containers -->
     <main class="app-main-content">
@@ -93,6 +107,8 @@
             </div>
 
             <div class="workspace-right-nav">
+              <button id="btn-reset-layout" class="btn-toolbar btn-reset-layout hidden" title="Reset blocks to default grid layout">↺ Reset to Grid</button>
+              <button id="btn-toggle-layout" class="btn-toolbar" title="Customize block positions and sizes">📐 Edit Layout</button>
               <button id="mf-delete-page-btn" class="btn-icon-subtle" title="Delete current slide">
                 🗑️ Delete Page
               </button>
@@ -130,16 +146,22 @@
       <section id="notes-view" class="view-panel">
         <div class="notes-tab-container">
           
-          <!-- Search & Filter Bar -->
-          <div class="notes-search-bar">
-            <span class="search-icon">🔍</span>
-            <input type="text" id="notes-search-input" placeholder="Search notes..." autocomplete="off">
+          <!-- Search & Actions Top Bar -->
+          <div class="notes-top-bar">
+            <button id="btn-create-new-note" class="btn btn-primary btn-create-note" title="Create a new note">
+              + New Note
+            </button>
+            <div class="notes-search-bar">
+              <span class="search-icon">🔍</span>
+              <input type="text" id="notes-search-input" placeholder="Search notes..." autocomplete="off">
+            </div>
           </div>
 
           <!-- Quick Note Capture Box -->
           <div class="quick-note-wrapper" id="quick-note-box">
             <!-- Collapsed state -->
             <div id="note-quick-collapsed" class="quick-note-collapsed">
+              <span class="quick-plus-icon">＋</span>
               <span>Take a note...</span>
             </div>
 
@@ -257,6 +279,60 @@
           </div>
         </div>
         <textarea id="modal-note-body" class="note-edit-textarea" placeholder="Take a note..."></textarea>
+      </div>
+    </div>
+
+    <!-- Activity Calendar & Telemetry Timeline Modal -->
+    <div id="timeline-modal" class="modal-overlay hidden">
+      <div class="modal-card timeline-card">
+        <div class="timeline-header">
+          <div class="timeline-title-group">
+            <h3 class="modal-dialog-title">Activity &amp; Focus Timeline</h3>
+            <p class="modal-dialog-subtitle">Select a date to enter Time-Machine mode and inspect focused work</p>
+          </div>
+          <button id="timeline-modal-close" class="modal-dialog-close" aria-label="Close modal">&times;</button>
+        </div>
+        
+        <div class="timeline-calendar-controls">
+          <button id="timeline-prev-month-btn" class="btn btn-sm btn-secondary">&larr; Prev</button>
+          <span id="timeline-month-label" class="timeline-month-heading">September 2026</span>
+          <button id="timeline-next-month-btn" class="btn btn-sm btn-secondary">Next &rarr;</button>
+        </div>
+
+        <!-- Calendar Grid -->
+        <div class="timeline-calendar-wrapper">
+          <div class="timeline-weekdays">
+            <span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span>
+          </div>
+          <div id="timeline-calendar-grid" class="timeline-calendar-grid">
+            <!-- Rendered dynamically -->
+          </div>
+        </div>
+
+        <!-- Day Chronicle Details Panel -->
+        <div id="timeline-day-chronicle" class="timeline-day-chronicle hidden">
+          <div class="chronicle-header">
+            <div class="chronicle-title-group">
+              <span class="chronicle-badge">Day Chronicle</span>
+              <h4 id="chronicle-date-heading" class="chronicle-date-heading">Sunday, 20 September 2026</h4>
+            </div>
+            <div class="chronicle-actions">
+              <span id="chronicle-duration-badge" class="chronicle-duration-badge">0 mins focus</span>
+              <button id="chronicle-filter-btn" class="btn btn-sm btn-primary">Enter Time Machine</button>
+            </div>
+          </div>
+          <div id="chronicle-events-list" class="chronicle-events-list">
+            <!-- Rendered activity events -->
+          </div>
+        </div>
+
+        <!-- Date Details / Legend Preview -->
+        <div class="timeline-legend">
+          <div class="legend-item"><span class="legend-dot dot-mindflow"></span> Mind Flow</div>
+          <div class="legend-item"><span class="legend-dot dot-notes"></span> Notes</div>
+          <div class="legend-item"><span class="legend-dot dot-diary"></span> Diary</div>
+          <span class="legend-hint">Badge indicates active focus time</span>
+        </div>
       </div>
     </div>
 

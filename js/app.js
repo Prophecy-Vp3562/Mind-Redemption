@@ -1,12 +1,13 @@
 /**
- * Production Application Orchestrator for Thought Redemption
- * Coordinates tab routing, theme management, workspace rehydration, and module initialization.
+ * Production Application Orchestrator for Mind Redemption
+ * Manages tab switching, keyboard shortcuts, export/import, and component instantiation.
  */
 
 import { loadStorageData, getActiveWorkspace, setActiveWorkspace } from './fs-storage.js';
 import { initMindFlow } from './mindflow.js';
 import { initNotes } from './notes.js';
 import { initDiary } from './diary.js';
+import { initTimeline, trackSession, onTimeMachineChange } from './timeline.js';
 
 const THEME_KEY = 'thought_theme';
 const VALID_TABS = ['mindflow', 'notes', 'diary'];
@@ -73,14 +74,63 @@ export function switchTab(tabName) {
     initDiary();
   }
 
+  // Telemetry: Track active session module
+  trackSession(tabName, 'root');
+
   // Persist current tab in active workspace
   setActiveWorkspace({ currentTab: tabName });
+}
+
+/**
+ * Starts real-time dynamic clock ticker in header
+ */
+export function startHeaderClock() {
+  const clockEl = document.getElementById('header-clock');
+  if (!clockEl) return;
+
+  const updateClock = () => {
+    const now = new Date();
+    const timeStr = now.toLocaleTimeString([], {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true
+    });
+    const dateStr = now.toLocaleDateString('en-GB', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric'
+    });
+
+    clockEl.textContent = `${timeStr} • ${dateStr}`;
+  };
+
+  // Run immediately on page mount to avoid 1-second blank flash
+  updateClock();
+
+  // Clear any existing timer to avoid multiple intervals
+  if (window._headerClockTimer) {
+    clearInterval(window._headerClockTimer);
+  }
+
+  // Tick every second dynamically without requiring a page refresh
+  window._headerClockTimer = setInterval(updateClock, 1000);
+}
+
+// Start ticker immediately regardless of module execution timing
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', startHeaderClock);
+} else {
+  startHeaderClock();
 }
 
 /**
  * Application Lifecycle Initialization Pipeline
  */
 document.addEventListener('DOMContentLoaded', async () => {
+  // Start real-time dynamic header clock
+  startHeaderClock();
+
   // 1. Rehydrate theme from localStorage (default: dark)
   const savedTheme = localStorage.getItem(THEME_KEY) || 'dark';
   applyTheme(savedTheme);
@@ -93,10 +143,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   // 2. Fetch canonical state from the local FastAPI companion server
   await loadStorageData();
 
-  // 3. Initialize all three subsystems
+  // 3. Initialize all subsystems
   try { initMindFlow(); } catch (e) { console.error('MindFlow init error:', e); }
   try { initNotes(); } catch (e) { console.error('Notes init error:', e); }
   try { initDiary(); } catch (e) { console.error('Diary init error:', e); }
+  try { initTimeline(); } catch (e) { console.error('Timeline init error:', e); }
 
   // 4. Retrieve activeWorkspace state and activate the recorded currentTab
   const workspace = getActiveWorkspace() || { currentTab: 'mindflow' };
@@ -128,3 +179,4 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 });
+
