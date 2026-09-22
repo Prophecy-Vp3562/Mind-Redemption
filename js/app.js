@@ -18,6 +18,7 @@ import { initMindFlow } from './mindflow.js';
 import { initNotes } from './notes.js';
 import { initDiary } from './diary.js';
 import { initTimeline, trackSession, onTimeMachineChange } from './timeline.js';
+import { initCloakEngine, isCloaked, revealCloak } from './cloak.js';
 
 const THEME_KEY = 'thought_theme';
 const VALID_TABS = ['mindflow', 'notes', 'diary'];
@@ -310,6 +311,11 @@ async function handleAdminAuthSubmit(e) {
  * Flushes active block and note inputs to in-memory state before atomic exit
  */
 function collectUnsavedActiveInputs() {
+  // 0. If currently in Chameleon Masking mode, reveal genuine text before flushing
+  if (isCloaked()) {
+    revealCloak();
+  }
+
   // 1. MindFlow active contenteditable block
   const activeEditable = document.querySelector('.block-body[contenteditable="true"]');
   if (activeEditable) {
@@ -412,6 +418,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Initialize trigger listeners
   setupTriggerListeners();
+
+  // Initialize Chameleon Masking / Typing Cloak Engine
+  initCloakEngine();
 
   // 1. Rehydrate theme from localStorage (default: dark)
   const savedTheme = localStorage.getItem(THEME_KEY) || 'dark';

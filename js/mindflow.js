@@ -10,6 +10,7 @@
 
 import { storage, getActiveWorkspace, setActiveWorkspace } from './fs-storage.js';
 import { logTimelineEvent, trackSession, getTimeMachineDate, onTimeMachineChange, formatDateDMY } from './timeline.js';
+import { isCloaked, getRealBufferForElement } from './cloak.js';
 
 // Superscript marker helpers
 const SUPERSCRIPTS = ['¹', '²', '³', '⁴', '⁵', '⁶', '⁷', '⁸', '⁹', '¹⁰', '¹¹', '¹²', '¹³', '¹⁴', '¹⁵'];
@@ -921,7 +922,7 @@ export class MindFlowController {
 
     // Click-to-write: typing writes only into this block
     textarea.addEventListener('input', (e) => {
-      blockData.content = e.target.value;
+      blockData.content = isCloaked(e.target) ? getRealBufferForElement(e.target) : e.target.value;
       const note = this.getActiveNote();
       if (note) note.updatedAt = new Date().toISOString();
       storage.scheduleSave();

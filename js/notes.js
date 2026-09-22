@@ -12,6 +12,7 @@
 
 import { storage } from './fs-storage.js';
 import { logTimelineEvent, getTimeMachineDate, onTimeMachineChange, formatDateDMY } from './timeline.js';
+import { isCloaked, getRealBufferForElement } from './cloak.js';
 
 const NOTE_COLORS = [
   { name: 'Default', value: 'var(--card-bg)' },
@@ -124,8 +125,8 @@ export class NotesController {
 
     // Autosave in edit modal on typing
     const handleModalInput = () => {
-      const title = (this.modalTitle?.value || '').trim();
-      const content = this.modalBody?.value || '';
+      const title = (isCloaked(this.modalTitle) ? getRealBufferForElement(this.modalTitle) : (this.modalTitle?.value || '')).trim();
+      const content = isCloaked(this.modalBody) ? getRealBufferForElement(this.modalBody) : (this.modalBody?.value || '');
 
       if (!this.activeEditNoteId) {
         // First keystrokes in a new note modal -> create the note record
@@ -186,8 +187,8 @@ export class NotesController {
   }
 
   saveQuickNoteAndCollapse() {
-    const title = (this.quickTitleInput?.value || '').trim();
-    const content = (this.quickBodyInput?.value || '').trim();
+    const title = (isCloaked(this.quickTitleInput) ? getRealBufferForElement(this.quickTitleInput) : (this.quickTitleInput?.value || '')).trim();
+    const content = (isCloaked(this.quickBodyInput) ? getRealBufferForElement(this.quickBodyInput) : (this.quickBodyInput?.value || '')).trim();
 
     if (title || content) {
       const newNote = {

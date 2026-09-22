@@ -5,6 +5,7 @@
 
 import { getNamespace, saveStorageData } from './fs-storage.js';
 import { logTimelineEvent, getTimeMachineDate, onTimeMachineChange, formatDateDisplay, formatTimeDisplay } from './timeline.js';
+import { isCloaked, getRealBufferForElement } from './cloak.js';
 
 /**
  * Format Date object to local YYYY-MM-DD
@@ -252,9 +253,9 @@ export function initDiary(containerEl = null, initialDate = null) {
     const diary = getDiaryState();
     const entry = getEntry(activeDateStr);
 
-    entry.morningIntentions = morningInput.value;
-    entry.eveningReview = eveningInput.value;
-    entry.quote = quoteInput.value;
+    entry.morningIntentions = isCloaked(morningInput) ? getRealBufferForElement(morningInput) : morningInput.value;
+    entry.eveningReview = isCloaked(eveningInput) ? getRealBufferForElement(eveningInput) : eveningInput.value;
+    entry.quote = isCloaked(quoteInput) ? getRealBufferForElement(quoteInput) : quoteInput.value;
     entry.updatedAt = new Date().toISOString();
 
     saveStorageData('diary', diary);

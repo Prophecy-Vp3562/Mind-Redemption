@@ -3185,3 +3185,29 @@ body.theme-dark .dot-diary {
 .auth-shake {
   animation: authShake 0.35s ease;
 }
+
+/* ==========================================================================
+   Chameleon Masking / Typing Cloak System
+   ========================================================================== */
+
+.cloak-revealing {
+  transition: opacity 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  opacity: 0.15 !important;
+}
+
+/* Discrete cloaking pulse on brand symbol dot */
+body.chameleon-cloaked .symbol-dot {
+  box-shadow: 0 0 8px var(--accent-glow, rgba(61, 92, 75, 0.7));
+  animation: cloakPulse 3s infinite ease-in-out;
+}
+
+@keyframes cloakPulse {
+  0%, 100% {
+    opacity: 0.75;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.2);
+  }
+}
