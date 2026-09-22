@@ -2,29 +2,62 @@ from pathlib import Path
 import json
 import tempfile
 import os
+import shutil
+import secrets
 from datetime import datetime
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Tuple
 
-from fastapi import FastAPI, HTTPException, Body
+from fastapi import FastAPI, HTTPException, Body, Request
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
-# Initialize Storage Directory
-NEW_STORAGE_DIR = Path.home() / "Documents" / "Mind Redemption Data"
-OLD_STORAGE_DIR = Path.home() / "Documents" / "Thought Redemption Data"
-STORAGE_DIR = OLD_STORAGE_DIR if (OLD_STORAGE_DIR.exists() and not NEW_STORAGE_DIR.exists()) else NEW_STORAGE_DIR
+# Canonical Storage Directory Contract
+STORAGE_DIR = Path.home() / "Documents" / "Mind Redemption Data"
 STORAGE_DIR.mkdir(parents=True, exist_ok=True)
 
+# Decoy Partition (Public)
 DATA_FILE = STORAGE_DIR / "mind-redemption-data.json"
-if not DATA_FILE.exists():
-    OLD_DATA_FILE = STORAGE_DIR / "thought-redemption-data.json"
-    if OLD_DATA_FILE.exists():
-        DATA_FILE = OLD_DATA_FILE
-
-# Dedicated Hierarchical Timeline Directory Contract:
-# timeline/{YYYY}/{MM}/{DD}.json
+DECOY_DATA_FILE = DATA_FILE
 TIMELINE_DIR = STORAGE_DIR / "timeline"
 TIMELINE_DIR.mkdir(parents=True, exist_ok=True)
+DECOY_TIMELINE_DIR = TIMELINE_DIR
+
+# Admin Vault Partition (Strictly Isolated on Disk)
+ADMIN_DATA_FILE = STORAGE_DIR / "mind-redemption-admin-data.json"
+ADMIN_TIMELINE_DIR = STORAGE_DIR / "timeline-admin"
+ADMIN_TIMELINE_DIR.mkdir(parents=True, exist_ok=True)
+
+# Administrative Security Credentials & In-Memory Active Session Registry
+ADMIN_VAULT_PASSWORD = os.environ.get("ADMIN_VAULT_PASSWORD", "relife")
+ACTIVE_ADMIN_SESSIONS: set = set()
+
+# Seamless Legacy Data Migration (Thought Redemption -> Mind Redemption)
+def migrate_legacy_data():
+    legacy_dir = Path.home() / "Documents" / "Thought Redemption Data"
+    if not DECOY_DATA_FILE.exists():
+        legacy_file = legacy_dir / "thought-redemption-data.json" if legacy_dir.exists() else None
+        local_legacy_file = STORAGE_DIR / "thought-redemption-data.json"
+        source_file = legacy_file if (legacy_file and legacy_file.exists()) else (local_legacy_file if local_legacy_file.exists() else None)
+        if source_file:
+            try:
+                shutil.copy2(source_file, DECOY_DATA_FILE)
+            except Exception as e:
+                print(f"Legacy data file copy notice: {e}")
+
+    if legacy_dir.exists():
+        legacy_timeline = legacy_dir / "timeline"
+        if legacy_timeline.exists() and not any(DECOY_TIMELINE_DIR.iterdir()):
+            try:
+                for item in legacy_timeline.iterdir():
+                    dest = DECOY_TIMELINE_DIR / item.name
+                    if item.is_dir() and not dest.exists():
+                        shutil.copytree(item, dest)
+                    elif item.is_file() and not dest.exists():
+                        shutil.copy2(item, dest)
+            except Exception as e:
+                print(f"Legacy timeline folder copy notice: {e}")
+
+migrate_legacy_data()
 
 DEFAULT_SCHEMA: Dict[str, Any] = {
     "version": "1.0.0",
@@ -93,6 +126,73 @@ DEFAULT_SCHEMA: Dict[str, Any] = {
     "diary": {"entries": {}},
 }
 
+ADMIN_DEFAULT_SCHEMA: Dict[str, Any] = {
+    "version": "1.0.0",
+    "activeWorkspace": {"currentTab": "mindflow", "activeBookId": None, "activePageId": None},
+    "mindFlow": {
+        "books": [
+            {
+                "id": "admin-book-1",
+                "title": "Confidential Intelligence & Strategic Analysis",
+                "createdAt": "2026-09-22T00:00:00.000Z",
+                "updatedAt": "2026-09-22T00:00:00.000Z",
+                "pages": [
+                    {
+                        "id": "admin-page-1",
+                        "sideBlockCount": 4,
+                        "blocks": {
+                            "main": {
+                                "id": "main",
+                                "title": "Operational Thesis & Classified Directive",
+                                "content": "Administrative Vault Mounted Successfully.\n\nThis partition is strictly isolated on disk from public decoy storage. All changes made in this session are written directly to mind-redemption-admin-data.json and timeline-admin/.\n\nExiting this session immediately reverts to the public decoy profile without leaving memory traces.",
+                                "markers": ["¹"]
+                            },
+                            "side1": {
+                                "id": "side1",
+                                "title": "Risk Assessment (Top)",
+                                "content": "Side Block 1 (Top):\nIdentify exposure vectors and protocol safeguards.",
+                                "reference": "¹"
+                            },
+                            "side2": {
+                                "id": "side2",
+                                "title": "Contingencies (Right)",
+                                "content": "Side Block 2 (Right):\nDuress trap rules and decoy corruption feedback.",
+                                "reference": ""
+                            },
+                            "side3": {
+                                "id": "side3",
+                                "title": "Audit Logs (Bottom)",
+                                "content": "Side Block 3 (Bottom):\nSecure activity telemetry is dispatched to timeline-admin/.",
+                                "reference": ""
+                            },
+                            "side4": {
+                                "id": "side4",
+                                "title": "Safeguards (Left)",
+                                "content": "Side Block 4 (Left):\nVolatile session keys purged upon trigger or exit.",
+                                "reference": ""
+                            }
+                        }
+                    }
+                ]
+            }
+        ]
+    },
+    "notes": {
+        "items": [
+            {
+                "id": "admin-note-1",
+                "title": "Admin Classified Notes",
+                "content": "This note exists solely within the isolated admin vault partition.\nUnauthorized users entering the public app will never see this record.",
+                "color": "var(--card-bg)",
+                "pinned": True,
+                "createdAt": "2026-09-22T00:00:00.000Z",
+                "updatedAt": "2026-09-22T00:00:00.000Z"
+            }
+        ]
+    },
+    "diary": {"entries": {}},
+}
+
 app = FastAPI(title="Mind Redemption Local Companion Server")
 
 # CORS Middleware for local web frontends
@@ -147,10 +247,29 @@ def atomic_write(target_path: Path, data: Dict[str, Any]):
         raise
 
 
-def get_day_file_path(date_str: str) -> Path:
+def resolve_vault(request: Request) -> Tuple[bool, Path, Path]:
+    """
+    Inspects X-Vault-Profile header and Authorization bearer token.
+    Returns (is_admin, data_file, timeline_dir).
+    """
+    profile = request.headers.get("X-Vault-Profile", "default").strip().lower()
+    auth_header = request.headers.get("Authorization", "").strip()
+    token = None
+    if auth_header.lower().startswith("bearer "):
+        token = auth_header[7:].strip()
+    elif request.headers.get("X-Admin-Token"):
+        token = request.headers.get("X-Admin-Token").strip()
+
+    is_admin = (profile == "admin" and bool(token) and (token in ACTIVE_ADMIN_SESSIONS))
+    data_file = ADMIN_DATA_FILE if is_admin else DECOY_DATA_FILE
+    timeline_dir = ADMIN_TIMELINE_DIR if is_admin else DECOY_TIMELINE_DIR
+    return is_admin, data_file, timeline_dir
+
+
+def get_day_file_path(date_str: str, timeline_dir: Path) -> Path:
     """
     Parses "YYYY-MM-DD" into Year, Month, Day, creates parent folders if missing,
-    and returns Path to timeline/{YYYY}/{MM}/{DD}.json.
+    and returns Path to timeline/{YYYY}/{MM}/{DD}.json within given timeline directory.
     """
     cleaned = date_str.strip().split("T")[0]
     parts = cleaned.split("-")
@@ -161,7 +280,7 @@ def get_day_file_path(date_str: str) -> Path:
     month = f"{int(parts[1]):02d}"
     day = f"{int(parts[2]):02d}"
 
-    target_dir = TIMELINE_DIR / year / month
+    target_dir = timeline_dir / year / month
     target_dir.mkdir(parents=True, exist_ok=True)
     return target_dir / f"{day}.json"
 
@@ -179,13 +298,13 @@ def get_default_day_schema(date_str: str) -> Dict[str, Any]:
     }
 
 
-def load_day_file(date_str: str) -> Dict[str, Any]:
+def load_day_file(date_str: str, timeline_dir: Path) -> Dict[str, Any]:
     """
     Reads an individual day file or returns default schema.
     """
     cleaned = date_str.strip().split("T")[0]
     try:
-        file_path = get_day_file_path(cleaned)
+        file_path = get_day_file_path(cleaned, timeline_dir)
         if not file_path.exists():
             return get_default_day_schema(cleaned)
         with open(file_path, "r", encoding="utf-8") as f:
@@ -204,8 +323,8 @@ def migrate_legacy_timeline():
     Migrates legacy flat timeline file into the hierarchical timeline/{YYYY}/{MM}/{DD}.json structure if present.
     """
     legacy_files = [
-        STORAGE_DIR / "thought-redemption-timeline.json",
         STORAGE_DIR / "mind-redemption-timeline.json",
+        Path.home() / "Documents" / "Thought Redemption Data" / "thought-redemption-timeline.json",
     ]
     for leg_file in legacy_files:
         if leg_file.exists():
@@ -215,7 +334,7 @@ def migrate_legacy_timeline():
                 by_date = data.get("byDate", {})
                 for date_str, day_content in by_date.items():
                     try:
-                        file_path = get_day_file_path(date_str)
+                        file_path = get_day_file_path(date_str, DECOY_TIMELINE_DIR)
                         if not file_path.exists():
                             day_data = get_default_day_schema(date_str)
                             day_data["totalDurationSeconds"] = int(day_content.get("totalDurationSeconds", 0))
@@ -227,8 +346,6 @@ def migrate_legacy_timeline():
             except Exception as e:
                 print(f"Legacy timeline migration error for {leg_file}: {e}")
 
-
-# Run legacy migration on startup
 migrate_legacy_timeline()
 
 
@@ -237,15 +354,59 @@ async def health_check():
     return {"status": "ok"}
 
 
-@app.get("/api/load")
-async def load_data():
-    try:
-        if not DATA_FILE.exists():
-            # Generate file with default schema if missing
-            atomic_write(DATA_FILE, DEFAULT_SCHEMA)
-            return DEFAULT_SCHEMA
+# ==========================================================
+# Administrative Vault Authentication & Session Endpoints
+# ==========================================================
 
-        with open(DATA_FILE, "r", encoding="utf-8") as f:
+@app.post("/api/admin/verify")
+async def verify_admin(payload: Dict[str, Any] = Body(...)):
+    """
+    Validates provided password against administrator secret key.
+    On success, generates a cryptographically random session bearer token.
+    """
+    password = str(payload.get("password", ""))
+    if password == ADMIN_VAULT_PASSWORD:
+        token = secrets.token_hex(32)
+        ACTIVE_ADMIN_SESSIONS.add(token)
+        return {"success": True, "token": token}
+    raise HTTPException(status_code=401, detail="Invalid administrative password")
+
+
+@app.post("/api/admin/logout")
+async def logout_admin(request: Request):
+    """
+    Revokes the provided admin session bearer token from memory.
+    """
+    auth_header = request.headers.get("Authorization", "")
+    token = None
+    if auth_header.lower().startswith("bearer "):
+        token = auth_header[7:].strip()
+    elif request.headers.get("X-Admin-Token"):
+        token = request.headers.get("X-Admin-Token").strip()
+
+    if token and token in ACTIVE_ADMIN_SESSIONS:
+        ACTIVE_ADMIN_SESSIONS.remove(token)
+    return {"success": True, "message": "Admin session revoked"}
+
+
+# ==========================================================
+# Data Partition Persistence Endpoints (/api/load, /api/save, /api/data)
+# ==========================================================
+
+@app.get("/api/load")
+@app.get("/api/data")
+async def load_data(request: Request):
+    """
+    Loads workspace data from either the isolated Admin vault or public Decoy profile.
+    """
+    is_admin, data_file, _ = resolve_vault(request)
+    try:
+        if not data_file.exists():
+            schema = ADMIN_DEFAULT_SCHEMA if is_admin else DEFAULT_SCHEMA
+            atomic_write(data_file, schema)
+            return schema
+
+        with open(data_file, "r", encoding="utf-8") as f:
             data = json.load(f)
             return data
     except Exception as e:
@@ -255,10 +416,19 @@ async def load_data():
 
 
 @app.post("/api/save")
-async def save_data(payload: Dict[str, Any] = Body(...)):
+@app.post("/api/data")
+async def save_data(request: Request, payload: Dict[str, Any] = Body(...)):
+    """
+    Saves workspace data to either the isolated Admin vault or public Decoy profile.
+    """
+    is_admin, data_file, _ = resolve_vault(request)
     try:
-        atomic_write(DATA_FILE, payload)
-        return {"status": "success", "message": "Data saved successfully"}
+        atomic_write(data_file, payload)
+        return {
+            "status": "success",
+            "message": "Data saved successfully",
+            "vault": "admin" if is_admin else "default"
+        }
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Failed to save data file: {str(e)}"
@@ -270,13 +440,14 @@ async def save_data(payload: Dict[str, Any] = Body(...)):
 # ==========================================================
 
 @app.get("/api/timeline/day/{date_str}")
-async def get_timeline_day(date_str: str):
+async def get_timeline_day(date_str: str, request: Request):
     """
-    Directly reads and returns the contents of timeline/{YYYY}/{MM}/{DD}.json.
-    If non-existent, returns an empty template with status 200.
+    Directly reads and returns the contents of timeline/{YYYY}/{MM}/{DD}.json
+    from the active vault profile.
     """
+    _, _, timeline_dir = resolve_vault(request)
     try:
-        return load_day_file(date_str)
+        return load_day_file(date_str, timeline_dir)
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Failed to read day timeline for {date_str}: {str(e)}"
@@ -284,15 +455,16 @@ async def get_timeline_day(date_str: str):
 
 
 @app.get("/api/timeline/month/{year}/{month}")
-async def get_timeline_month(year: str, month: str):
+async def get_timeline_month(year: str, month: str, request: Request):
     """
-    Scans timeline/{year}/{month}/*.json and returns a summary map of all recorded days in that month.
-    Format: { "2026-09-20": { "totalDuration": 1800, "totalDurationSeconds": 1800, "eventCount": 6, "modules": ["notes", "mindflow"] } }
+    Scans timeline/{year}/{month}/*.json in the active vault profile
+    and returns a summary map of all recorded days in that month.
     """
+    _, _, timeline_dir = resolve_vault(request)
     try:
         year_str = f"{int(year):04d}"
         month_str = f"{int(month):02d}"
-        month_dir = TIMELINE_DIR / year_str / month_str
+        month_dir = timeline_dir / year_str / month_str
 
         if not month_dir.exists():
             return {}
@@ -337,11 +509,11 @@ async def get_timeline_month(year: str, month: str):
 
 
 @app.post("/api/timeline/event")
-async def record_timeline_event(payload: Dict[str, Any] = Body(...)):
+async def record_timeline_event(request: Request, payload: Dict[str, Any] = Body(...)):
     """
-    Extracts target date (defaulting to today), loads timeline/{YYYY}/{MM}/{DD}.json,
-    appends the session/event telemetry, updates totalDurationSeconds, and saves atomically.
+    Appends session/event telemetry to the active vault partition's timeline.
     """
+    _, _, timeline_dir = resolve_vault(request)
     try:
         events: List[Dict[str, Any]] = []
         sessions: List[Dict[str, Any]] = []
@@ -374,7 +546,7 @@ async def record_timeline_event(payload: Dict[str, Any] = Body(...)):
                 target_date = datetime.now().strftime("%Y-%m-%d")
 
         target_date = target_date.strip().split("T")[0]
-        day_data = load_day_file(target_date)
+        day_data = load_day_file(target_date, timeline_dir)
 
         # Ensure unique IDs for new items
         now_ms = int(datetime.now().timestamp() * 1000)
@@ -393,7 +565,7 @@ async def record_timeline_event(payload: Dict[str, Any] = Body(...)):
             int(s.get("durationSeconds", 0)) for s in day_data.get("sessions", [])
         )
 
-        file_path = get_day_file_path(target_date)
+        file_path = get_day_file_path(target_date, timeline_dir)
         atomic_write(file_path, day_data)
 
         return {
@@ -412,8 +584,8 @@ async def record_timeline_event(payload: Dict[str, Any] = Body(...)):
 
 # Backward-compatible alias for day lookup
 @app.get("/api/timeline/{date_str}")
-async def get_timeline_by_date_alias(date_str: str):
-    return await get_timeline_day(date_str)
+async def get_timeline_by_date_alias(date_str: str, request: Request):
+    return await get_timeline_day(date_str, request)
 
 
 if __name__ == "__main__":

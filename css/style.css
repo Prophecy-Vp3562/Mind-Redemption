@@ -3024,3 +3024,164 @@ body.theme-dark .dot-diary {
   opacity: 0.85 !important;
   filter: none;
 }
+
+/* ==========================================================================
+   Stealth Duress Vault & Trigger System
+   ========================================================================== */
+
+/* Discrete Admin Session Indicator */
+.admin-session-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  border-radius: 6px;
+  background: var(--accent-soft, rgba(61, 92, 75, 0.15));
+  border: 1px solid var(--accent-glow, rgba(61, 92, 75, 0.35));
+  font-family: var(--font-mono, monospace);
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--accent-primary, #3d5c4b);
+  letter-spacing: 0.02em;
+  transition: all 0.2s ease;
+  user-select: none;
+}
+
+[data-theme="dark"] .admin-session-badge {
+  color: #79c99e;
+  border-color: rgba(121, 201, 158, 0.3);
+  background: rgba(121, 201, 158, 0.1);
+}
+
+.admin-session-badge .badge-lock {
+  font-size: 0.8rem;
+  line-height: 1;
+}
+
+.admin-session-badge .btn-admin-exit {
+  background: none;
+  border: none;
+  padding: 0 2px;
+  margin-left: 2px;
+  color: var(--danger, #c0453a);
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  text-decoration: underline;
+  transition: opacity 0.15s ease, color 0.15s ease;
+}
+
+.admin-session-badge .btn-admin-exit:hover {
+  opacity: 0.8;
+  color: #e55345;
+}
+
+/* Stealth Admin Auth Modal Card */
+.admin-auth-card {
+  width: 100%;
+  max-width: 400px;
+  padding: 1.75rem;
+  border-radius: 12px;
+  background: var(--card-bg, #1e2220);
+  border: 1px solid var(--card-border, rgba(255, 255, 255, 0.08));
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45);
+  animation: modalScaleIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.admin-auth-shield {
+  font-size: 2rem;
+  text-align: center;
+  margin-bottom: 0.5rem;
+}
+
+.admin-input-group {
+  margin: 1.25rem 0 0.5rem;
+}
+
+.admin-password-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.7rem 0.9rem;
+  font-size: 0.95rem;
+  font-family: var(--font-mono, monospace);
+  background: var(--bg-primary, #141715);
+  border: 1px solid var(--card-border, rgba(255, 255, 255, 0.12));
+  border-radius: 8px;
+  color: var(--text-primary, #e6eae7);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.admin-password-input:focus {
+  outline: none;
+  border-color: var(--accent-primary, #3d5c4b);
+  box-shadow: 0 0 0 2px var(--accent-glow, rgba(61, 92, 75, 0.3));
+}
+
+.admin-auth-error {
+  color: var(--danger, #c0453a);
+  font-size: 0.8rem;
+  margin-top: 0.4rem;
+  margin-bottom: 0.6rem;
+  text-align: center;
+  font-weight: 500;
+}
+
+/* Realistic Duress System Notice Banner / Toast */
+.duress-toast-banner {
+  position: fixed;
+  top: 1.25rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  padding: 0.75rem 1.25rem;
+  border-radius: 8px;
+  background: #251212;
+  border: 1px solid #732222;
+  color: #fca5a5;
+  font-family: var(--font-sans, sans-serif);
+  font-size: 0.85rem;
+  font-weight: 500;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  animation: duressSlideIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  pointer-events: none;
+}
+
+[data-theme="light"] .duress-toast-banner {
+  background: #fef2f2;
+  border-color: #f87171;
+  color: #991b1b;
+}
+
+.duress-toast-content {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.duress-toast-icon {
+  font-size: 1.1rem;
+}
+
+@keyframes duressSlideIn {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -15px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+@keyframes authShake {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-6px); }
+  40%, 80% { transform: translateX(6px); }
+}
+
+.auth-shake {
+  animation: authShake 0.35s ease;
+}

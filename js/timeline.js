@@ -3,6 +3,8 @@
  * Mind Redemption
  */
 
+import { getVaultHeaders } from './fs-storage.js';
+
 const API_BASE = 'http://127.0.0.1:8000/api';
 const IDLE_TIMEOUT_MS = 3 * 60 * 1000; // 3 minutes of inactivity pauses tracking
 const FLUSH_INTERVAL_MS = 60 * 1000;   // 60 seconds auto-flush
@@ -134,7 +136,7 @@ export async function flushActiveSession() {
   try {
     await fetch(`${API_BASE}/timeline/event`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...getVaultHeaders() },
       body: JSON.stringify({ date: targetDate, session: sessionPayload })
     });
   } catch (err) {
@@ -160,7 +162,7 @@ export async function logTimelineEvent(moduleName, action, entityId, title = '',
   try {
     await fetch(`${API_BASE}/timeline/event`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...getVaultHeaders() },
       body: JSON.stringify({ date: targetDate, event: eventPayload })
     });
   } catch (err) {
@@ -175,7 +177,9 @@ export async function fetchMonthTimelineData(year, month) {
   const y = String(year).padStart(4, '0');
   const m = String(month).padStart(2, '0');
   try {
-    const res = await fetch(`${API_BASE}/timeline/month/${y}/${m}`);
+    const res = await fetch(`${API_BASE}/timeline/month/${y}/${m}`, {
+      headers: { ...getVaultHeaders() }
+    });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.json();
   } catch (err) {
@@ -191,7 +195,9 @@ export async function fetchDayTimelineData(dateStr) {
   if (!dateStr) return { date: dateStr, totalDurationSeconds: 0, sessions: [], events: [] };
   const cleaned = String(dateStr).split('T')[0];
   try {
-    const res = await fetch(`${API_BASE}/timeline/day/${cleaned}`);
+    const res = await fetch(`${API_BASE}/timeline/day/${cleaned}`, {
+      headers: { ...getVaultHeaders() }
+    });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.json();
   } catch (err) {

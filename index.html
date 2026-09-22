@@ -43,6 +43,11 @@
 
       <!-- Header Controls: Clock, Timeline & Theme Toggle -->
       <div class="header-actions">
+        <div id="admin-session-badge" class="admin-session-badge hidden" title="Active Admin Vault Session">
+          <span class="badge-lock">🔒</span>
+          <span class="badge-label">Admin Session</span>
+          <button id="admin-exit-btn" class="btn-admin-exit" title="Exit Admin Vault and Return to Decoy">[Exit]</button>
+        </div>
         <span id="header-clock" class="header-clock" title="Current Real-time Clock">00:00:00</span>
         <button id="timeline-btn" class="btn btn-sm btn-timeline" title="Activity Timeline & Focus Calendar">
           📅 Timeline
@@ -342,6 +347,35 @@
           <div class="legend-item"><span class="legend-dot dot-diary"></span> Diary</div>
           <span class="legend-hint">Badge indicates active focus time</span>
         </div>
+      </div>
+    </div>
+
+    <!-- Stealth Duress Admin Vault Auth Modal -->
+    <div id="admin-auth-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="admin-auth-title">
+      <div class="modal-card admin-auth-card">
+        <div class="modal-header">
+          <div class="admin-auth-shield">🔒</div>
+          <h3 id="admin-auth-title" class="modal-dialog-title">Authentication Required</h3>
+          <p class="modal-subtitle">Administrative partition is locked. Enter key to decrypt and mount vault.</p>
+        </div>
+        <form id="admin-auth-form" class="admin-auth-form" autocomplete="off">
+          <div class="admin-input-group">
+            <input type="password" id="admin-password-input" class="admin-password-input" placeholder="Passphrase" autocomplete="current-password" autofocus required>
+          </div>
+          <div id="admin-auth-error" class="admin-auth-error hidden">Invalid administrative credentials</div>
+          <div class="modal-dialog-actions">
+            <button type="button" id="admin-auth-cancel" class="btn btn-secondary">Cancel</button>
+            <button type="submit" id="admin-auth-submit" class="btn btn-primary">Submit</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Duress Warning / Error Banner -->
+    <div id="duress-toast-banner" class="duress-toast-banner hidden" role="alert">
+      <div class="duress-toast-content">
+        <span class="duress-toast-icon">⚠️</span>
+        <span id="duress-toast-message" class="duress-toast-message">System Notice: Admin workspace corrupted or notes deleted.</span>
       </div>
     </div>
 
