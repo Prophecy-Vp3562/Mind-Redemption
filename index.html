@@ -1,15 +1,20 @@
 <!DOCTYPE html>
 <html lang="en" data-theme="dark">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Mind Redemption — Personal Metacognition &amp; Notes</title>
-  <meta name="description" content="Local-first personal thinking, self-questioning, and note-taking tool with multi-block cross layout metacognition.">
+  <meta name="description"
+    content="Local-first personal thinking, self-questioning, and note-taking tool with multi-block cross layout metacognition.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400..600;1,6..72,400..600&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link
+    href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400..600;1,6..72,400..600&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+    rel="stylesheet">
   <link rel="stylesheet" href="css/style.css">
 </head>
+
 <body>
   <!-- App Root Container -->
   <div id="app" class="app-root">
@@ -53,7 +58,8 @@
       <div class="time-machine-content">
         <span class="time-machine-icon">🕒</span>
         <span class="time-machine-text">
-          Time Machine: Viewing <strong id="time-machine-date">20 September 2026</strong> &nbsp;|&nbsp; Focus Time: <strong id="time-machine-duration">0 mins</strong>
+          Time Machine: Viewing <strong id="time-machine-date">20 September 2026</strong> &nbsp;|&nbsp; Focus Time:
+          <strong id="time-machine-duration">0 mins</strong>
         </span>
       </div>
       <button id="time-machine-exit-btn" class="time-machine-exit-btn">Exit Filter</button>
@@ -66,7 +72,7 @@
       <!-- TAB 1: MIND FLOW (Core Metacognitive Engine)  -->
       <!-- ============================================== -->
       <section id="mindflow-view" class="view-panel active">
-        
+
         <!-- Shelf View: Book Library -->
         <div id="mindflow-shelf-view" class="mindflow-shelf">
           <div class="shelf-header">
@@ -87,7 +93,7 @@
 
         <!-- Workspace View: Slides Navigation & 5-Block Cross Layout -->
         <div id="mindflow-workspace-view" class="mindflow-workspace hidden">
-          
+
           <!-- Workspace Navigation Bar -->
           <div class="workspace-top-bar">
             <div class="workspace-left-nav">
@@ -95,7 +101,8 @@
                 ← Library
               </button>
               <div class="title-divider">/</div>
-              <div id="mf-active-note-title" class="editable-note-title" contenteditable="true" spellcheck="false" title="Click to rename note">
+              <div id="mf-active-note-title" class="editable-note-title" contenteditable="true" spellcheck="false"
+                title="Click to rename note">
                 Untitled Note
               </div>
             </div>
@@ -107,8 +114,10 @@
             </div>
 
             <div class="workspace-right-nav">
-              <button id="btn-reset-layout" class="btn-toolbar btn-reset-layout hidden" title="Reset blocks to default grid layout">↺ Reset to Grid</button>
-              <button id="btn-toggle-layout" class="btn-toolbar" title="Customize block positions and sizes">📐 Edit Layout</button>
+              <button id="btn-reset-layout" class="btn-toolbar btn-reset-layout hidden"
+                title="Reset blocks to default grid layout">↺ Reset to Grid</button>
+              <button id="btn-toggle-layout" class="btn-toolbar" title="Customize block positions and sizes">📐 Edit
+                Layout</button>
               <button id="mf-delete-page-btn" class="btn-icon-subtle" title="Delete current slide">
                 🗑️ Delete Page
               </button>
@@ -117,7 +126,7 @@
 
           <!-- Slide Strip & Cross Layout Body -->
           <div class="workspace-body">
-            
+
             <!-- Slide Strip Sidebar (Thumbnails) -->
             <aside class="slide-strip-sidebar" id="mf-slide-strip-container">
               <div class="slide-strip-header">
@@ -145,7 +154,7 @@
       <!-- ============================================== -->
       <section id="notes-view" class="view-panel">
         <div class="notes-tab-container">
-          
+
           <!-- Search & Actions Top Bar -->
           <div class="notes-top-bar">
             <button id="btn-create-new-note" class="btn btn-primary btn-create-note" title="Create a new note">
@@ -292,7 +301,7 @@
           </div>
           <button id="timeline-modal-close" class="modal-dialog-close" aria-label="Close modal">&times;</button>
         </div>
-        
+
         <div class="timeline-calendar-controls">
           <button id="timeline-prev-month-btn" class="btn btn-sm btn-secondary">&larr; Prev</button>
           <span id="timeline-month-label" class="timeline-month-heading">September 2026</span>
@@ -341,4 +350,5 @@
   <!-- Main ES Module Entry Point -->
   <script type="module" src="js/app.js"></script>
 </body>
+
 </html>
