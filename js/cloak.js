@@ -110,7 +110,8 @@ function removeCharBeforeCaret(el) {
  * Activates Chameleon Masking Mode
  */
 export function activateCloak(target = null) {
-  const el = target || findActiveWritingElement();
+  const isWritable = (node) => node && (node.tagName === 'TEXTAREA' || (node.tagName === 'INPUT' && (node.type === 'text' || !node.type)) || node.isContentEditable);
+  const el = (isWritable(target) ? target : null) || findActiveWritingElement();
   if (!el) {
     console.warn('Chameleon Cloak: No active writing element found to cloak.');
     return;
@@ -181,9 +182,29 @@ export function revealCloak() {
 }
 
 /**
+ * Toggles Chameleon Masking Mode (Mask / Unmask)
+ */
+export function toggleCloak(target = null) {
+  if (isCloakedState) {
+    revealCloak();
+  } else {
+    activateCloak(target);
+  }
+}
+
+/**
  * Keystroke Interceptor Handler
  */
 function handleCloakKeydown(e) {
+  // Primary Unified Shortcut: Ctrl + ` (Backquote / Tilde) to toggle Masking & Unmasking
+  const isBackquote = e.key === '`' || e.key === '~' || e.code === 'Backquote';
+  if ((e.ctrlKey || e.metaKey) && isBackquote) {
+    e.preventDefault();
+    e.stopPropagation();
+    toggleCloak(e.target);
+    return;
+  }
+
   // Check Escape sequence: Esc arms 1000ms window
   if (e.key === 'Escape') {
     // If admin auth modal is open, let standard modal handler close it
