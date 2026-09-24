@@ -124,6 +124,7 @@ DEFAULT_SCHEMA: Dict[str, Any] = {
         ]
     },
     "diary": {"entries": {}},
+    "trash": []
 }
 
 ADMIN_DEFAULT_SCHEMA: Dict[str, Any] = {
@@ -191,6 +192,7 @@ ADMIN_DEFAULT_SCHEMA: Dict[str, Any] = {
         ]
     },
     "diary": {"entries": {}},
+    "trash": []
 }
 
 app = FastAPI(title="Mind Redemption Local Companion Server")
@@ -408,6 +410,7 @@ async def load_data(request: Request):
 
         with open(data_file, "r", encoding="utf-8") as f:
             data = json.load(f)
+            data.setdefault("trash", [])
             return data
     except Exception as e:
         raise HTTPException(

@@ -22,7 +22,8 @@ const CANONICAL_STATE = {
   },
   diary: {
     entries: {}
-  }
+  },
+  trash: []
 };
 
 let inMemoryState = JSON.parse(JSON.stringify(CANONICAL_STATE));
@@ -193,7 +194,8 @@ export async function loadStorageData() {
       },
       diary: {
         entries: payload.diary?.entries || {}
-      }
+      },
+      trash: Array.isArray(payload.trash) ? payload.trash : []
     };
 
     if (currentProfile === 'default') {
@@ -389,6 +391,12 @@ export const storage = {
   },
   getDiaryData() {
     return inMemoryState.diary;
+  },
+  getTrashData() {
+    if (!Array.isArray(inMemoryState.trash)) {
+      inMemoryState.trash = [];
+    }
+    return inMemoryState.trash;
   },
   onConnectionChange(listener) {
     checkServerHealth().then(ok => {

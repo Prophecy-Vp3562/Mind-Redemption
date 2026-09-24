@@ -11,6 +11,7 @@
 import { storage, getActiveWorkspace, setActiveWorkspace } from './fs-storage.js';
 import { logTimelineEvent, trackSession, getTimeMachineDate, onTimeMachineChange, formatDateDMY } from './timeline.js';
 import { isCloaked, getRealBufferForElement } from './cloak.js';
+import { isToday } from './app.js';
 
 // Superscript marker helpers
 const SUPERSCRIPTS = ['¹', '²', '³', '⁴', '⁵', '⁶', '⁷', '⁸', '⁹', '¹⁰', '¹¹', '¹²', '¹³', '¹⁴', '¹⁵'];
@@ -82,7 +83,7 @@ export class MindFlowController {
     this.activeNoteTitleEl?.addEventListener('input', (e) => {
       const note = this.getActiveNote();
       if (note) {
-        note.title = e.target.textContent.trim() || 'Untitled Note';
+        note.title = (isCloaked(e.target) ? getRealBufferForElement(e.target) : e.target.textContent).trim() || 'Untitled Note';
         note.updatedAt = new Date().toISOString();
         storage.scheduleSave();
       }
@@ -397,20 +398,49 @@ export class MindFlowController {
     this.shelfView.classList.remove('hidden');
     this.workspaceView.classList.add('hidden');
 
-    const notes = this.getNotes();
+    const checkIsToday = typeof isToday === 'function' ? isToday : (typeof window.isToday === 'function' ? window.isToday : () => false);
+    const isTodayMode = window.viewScope !== 'all-time';
+
+    let allNotes = this.getNotes() || [];
+    let notes = [...allNotes];
+
+    if (isTodayMode) {
+      notes = notes.filter(note => {
+        if (checkIsToday(note.updatedAt) || checkIsToday(note.createdAt)) return true;
+        if (note.pages && note.pages.some(p => checkIsToday(p.updatedAt) || checkIsToday(p.createdAt))) return true;
+        return false;
+      });
+    }
+
     this.notesGrid.innerHTML = '';
 
     if (notes.length === 0) {
+      const emptyTitle = isTodayMode ? 'No Mind Flow notes touched today' : 'No Mind Flow Notes Yet';
+      const emptyDesc = isTodayMode
+        ? 'Create a note to start thinking today, or switch to All-Time Archives.'
+        : 'Create your first multi-block metacognitive book to begin structured personal thinking.';
+      const switchBtnHtml = isTodayMode
+        ? `<button class="btn btn-secondary" id="empty-mf-switch-all-time">Switch to All Time</button>`
+        : '';
+
       this.notesGrid.innerHTML = `
         <div class="empty-shelf-prompt">
           <div class="empty-icon">📖</div>
-          <h3>No Mind Flow Notes Yet</h3>
-          <p>Create your first multi-block metacognitive book to begin structured personal thinking.</p>
-          <button class="btn btn-primary" id="empty-create-note-btn">+ Create First Note</button>
+          <h3>${emptyTitle}</h3>
+          <p>${emptyDesc}</p>
+          <div style="display:flex;gap:10px;justify-content:center;margin-top:16px;">
+            <button class="btn btn-primary" id="empty-create-note-btn">+ Create First Note</button>
+            ${switchBtnHtml}
+          </div>
         </div>
       `;
       document.getElementById('empty-create-note-btn')?.addEventListener('click', () => {
         this.showCreateNoteModal();
+      });
+      document.getElementById('empty-mf-switch-all-time')?.addEventListener('click', () => {
+        if (typeof window.setViewScope === 'function') {
+          window.setViewScope('all-time');
+        }
       });
       return;
     }
@@ -518,12 +548,23 @@ export class MindFlowController {
   }
 
   confirmDeleteNote(note) {
-    if (confirm(`Are you sure you want to delete "${note.title}"? This cannot be undone.`)) {
+    if (confirm(`Move "${note.title}" to the Recycle Bin?`)) {
       const notes = this.getNotes();
       const idx = notes.findIndex(n => n.id === note.id);
       if (idx !== -1) {
-        notes.splice(idx, 1);
+        const [deletedItem] = notes.splice(idx, 1);
+        const trash = storage.getTrashData();
+        trash.unshift({
+          id: 'trash_' + Date.now(),
+          type: 'mindflow',
+          title: deletedItem.title || 'Untitled',
+          deletedAt: new Date().toISOString(),
+          payload: deletedItem
+        });
         storage.scheduleSave();
+        if (typeof window.refreshBinUI === 'function') {
+          window.refreshBinUI();
+        }
         this.render();
       }
     }
@@ -561,7 +602,9 @@ export class MindFlowController {
     return {
       id: pageId,
       sideBlockCount,
-      blocks
+      blocks,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
     };
   }
 
@@ -620,14 +663,30 @@ export class MindFlowController {
       return;
     }
 
-    if (confirm(`Delete Page ${this.currentPageIndex + 1}? All content on this slide will be removed.`)) {
-      note.pages.splice(this.currentPageIndex, 1);
+    if (confirm(`Move Page ${this.currentPageIndex + 1} to the Recycle Bin?`)) {
+      const [deletedPage] = note.pages.splice(this.currentPageIndex, 1);
+      deletedPage._isSlide = true;
+      deletedPage._parentBookId = note.id;
+      deletedPage._parentBookTitle = note.title;
+      const slideTitle = `${note.title} - Page ${this.currentPageIndex + 1}`;
+      const trash = storage.getTrashData();
+      trash.unshift({
+        id: 'trash_' + Date.now(),
+        type: 'mindflow',
+        title: slideTitle,
+        deletedAt: new Date().toISOString(),
+        payload: deletedPage
+      });
+
       if (this.currentPageIndex >= note.pages.length) {
         this.currentPageIndex = note.pages.length - 1;
       }
       this.zoomedBlockId = null;
       note.updatedAt = new Date().toISOString();
       storage.scheduleSave();
+      if (typeof window.refreshBinUI === 'function') {
+        window.refreshBinUI();
+      }
       this.renderWorkspace();
     }
   }
@@ -635,8 +694,22 @@ export class MindFlowController {
   // --- Page Navigation ---
   goToPrevPage() {
     const note = this.getActiveNote();
-    if (note && this.currentPageIndex > 0) {
-      this.currentPageIndex--;
+    if (!note) return;
+    const isTodayMode = window.viewScope !== 'all-time';
+    const checkIsToday = typeof isToday === 'function' ? isToday : (typeof window.isToday === 'function' ? window.isToday : () => false);
+
+    let allowedIndices = note.pages.map((_, i) => i);
+    if (isTodayMode) {
+      const todayIndices = note.pages
+        .map((p, i) => ({ p, i }))
+        .filter(({ p }) => (p.updatedAt || p.createdAt ? (checkIsToday(p.updatedAt) || checkIsToday(p.createdAt)) : (checkIsToday(note.createdAt) || checkIsToday(note.updatedAt))))
+        .map(({ i }) => i);
+      if (todayIndices.length > 0) allowedIndices = todayIndices;
+    }
+
+    const currentPos = allowedIndices.indexOf(this.currentPageIndex);
+    if (currentPos > 0) {
+      this.currentPageIndex = allowedIndices[currentPos - 1];
       this.zoomedBlockId = null;
       trackSession('mindflow', `${this.currentNoteId}:${this.currentPageIndex}`);
       this.renderWorkspace();
@@ -645,8 +718,22 @@ export class MindFlowController {
 
   goToNextPage() {
     const note = this.getActiveNote();
-    if (note && this.currentPageIndex < note.pages.length - 1) {
-      this.currentPageIndex++;
+    if (!note) return;
+    const isTodayMode = window.viewScope !== 'all-time';
+    const checkIsToday = typeof isToday === 'function' ? isToday : (typeof window.isToday === 'function' ? window.isToday : () => false);
+
+    let allowedIndices = note.pages.map((_, i) => i);
+    if (isTodayMode) {
+      const todayIndices = note.pages
+        .map((p, i) => ({ p, i }))
+        .filter(({ p }) => (p.updatedAt || p.createdAt ? (checkIsToday(p.updatedAt) || checkIsToday(p.createdAt)) : (checkIsToday(note.createdAt) || checkIsToday(note.updatedAt))))
+        .map(({ i }) => i);
+      if (todayIndices.length > 0) allowedIndices = todayIndices;
+    }
+
+    const currentPos = allowedIndices.indexOf(this.currentPageIndex);
+    if (currentPos !== -1 && currentPos < allowedIndices.length - 1) {
+      this.currentPageIndex = allowedIndices[currentPos + 1];
       this.zoomedBlockId = null;
       trackSession('mindflow', `${this.currentNoteId}:${this.currentPageIndex}`);
       this.renderWorkspace();
@@ -672,14 +759,30 @@ export class MindFlowController {
     // Slide Strip
     this.renderSlideStrip(note);
 
-    // Current Page Info
-    const totalPages = note.pages.length;
-    if (this.pageCounterEl) {
-      this.pageCounterEl.textContent = `Page ${this.currentPageIndex + 1} of ${totalPages}`;
+    // Current Page Info & Navigation State
+    const isTodayMode = window.viewScope !== 'all-time';
+    const checkIsToday = typeof isToday === 'function' ? isToday : (typeof window.isToday === 'function' ? window.isToday : () => false);
+
+    let allowedIndices = note.pages.map((_, i) => i);
+    if (isTodayMode) {
+      const todayIndices = note.pages
+        .map((p, i) => ({ p, i }))
+        .filter(({ p }) => (p.updatedAt || p.createdAt ? (checkIsToday(p.updatedAt) || checkIsToday(p.createdAt)) : (checkIsToday(note.createdAt) || checkIsToday(note.updatedAt))))
+        .map(({ i }) => i);
+      if (todayIndices.length > 0) allowedIndices = todayIndices;
     }
 
-    if (this.prevPageBtn) this.prevPageBtn.disabled = this.currentPageIndex === 0;
-    if (this.nextPageBtn) this.nextPageBtn.disabled = this.currentPageIndex === totalPages - 1;
+    const currentPos = allowedIndices.indexOf(this.currentPageIndex);
+    if (this.prevPageBtn) this.prevPageBtn.disabled = currentPos <= 0;
+    if (this.nextPageBtn) this.nextPageBtn.disabled = currentPos === -1 || currentPos >= allowedIndices.length - 1;
+
+    if (this.pageCounterEl) {
+      if (isTodayMode && allowedIndices.length < note.pages.length) {
+        this.pageCounterEl.textContent = `Page ${this.currentPageIndex + 1} of ${note.pages.length} (${allowedIndices.length} today)`;
+      } else {
+        this.pageCounterEl.textContent = `Page ${this.currentPageIndex + 1} of ${note.pages.length}`;
+      }
+    }
 
     // Render Blocks
     const page = this.getActivePage();
@@ -693,8 +796,47 @@ export class MindFlowController {
     this.slideStrip.innerHTML = '';
 
     const tmDate = getTimeMachineDate();
+    const checkIsToday = typeof isToday === 'function' ? isToday : (typeof window.isToday === 'function' ? window.isToday : () => false);
+    const isTodayMode = window.viewScope !== 'all-time';
 
-    note.pages.forEach((page, idx) => {
+    let slidesToRender = note.pages.map((page, idx) => ({ page, originalIndex: idx }));
+
+    if (isTodayMode) {
+      slidesToRender = slidesToRender.filter(({ page }) => {
+        if (page.updatedAt || page.createdAt) {
+          return checkIsToday(page.updatedAt) || checkIsToday(page.createdAt);
+        }
+        return checkIsToday(note.createdAt) || checkIsToday(note.updatedAt);
+      });
+    }
+
+    if (slidesToRender.length === 0 && isTodayMode) {
+      const emptyStripHint = document.createElement('div');
+      emptyStripHint.className = 'slide-strip-today-empty';
+      emptyStripHint.innerHTML = `
+        <span>No slides touched today.</span>
+        <button id="strip-switch-all-time-btn" class="btn-text-link">Show All Slides</button>
+      `;
+      this.slideStrip.appendChild(emptyStripHint);
+      emptyStripHint.querySelector('#strip-switch-all-time-btn')?.addEventListener('click', () => {
+        if (typeof window.setViewScope === 'function') {
+          window.setViewScope('all-time');
+        }
+      });
+      return;
+    }
+
+    // Auto-align current page index if not in filtered slides
+    if (isTodayMode && slidesToRender.length > 0) {
+      const hasActive = slidesToRender.some(s => s.originalIndex === this.currentPageIndex);
+      if (!hasActive) {
+        this.currentPageIndex = slidesToRender[0].originalIndex;
+        const page = this.getActivePage();
+        if (page) this.renderPageBlocks(page);
+      }
+    }
+
+    slidesToRender.forEach(({ page, originalIndex }) => {
       let tmClass = '';
       if (tmDate) {
         const isMatch = (note.updatedAt && note.updatedAt.startsWith(tmDate)) || 
@@ -703,9 +845,9 @@ export class MindFlowController {
       }
 
       const slideItem = document.createElement('div');
-      slideItem.className = `slide-thumb ${idx === this.currentPageIndex ? 'active' : ''} ${tmClass}`;
+      slideItem.className = `slide-thumb ${originalIndex === this.currentPageIndex ? 'active' : ''} ${tmClass}`;
       slideItem.innerHTML = `
-        <div class="slide-thumb-number">${idx + 1}</div>
+        <div class="slide-thumb-number">${originalIndex + 1}</div>
         <div class="slide-thumb-preview count-${page.sideBlockCount}">
           <div class="mini-block mini-center"></div>
           ${page.sideBlockCount >= 1 ? '<div class="mini-block mini-side1"></div>' : ''}
@@ -716,8 +858,8 @@ export class MindFlowController {
       `;
 
       slideItem.addEventListener('click', () => {
-        if (this.currentPageIndex !== idx) {
-          this.currentPageIndex = idx;
+        if (this.currentPageIndex !== originalIndex) {
+          this.currentPageIndex = originalIndex;
           this.zoomedBlockId = null;
           this.renderWorkspace();
         }
@@ -829,8 +971,10 @@ export class MindFlowController {
     titleInput.value = blockData.title || (isMain ? 'Main Branch' : `Side ${sideIndex}`);
     titleInput.placeholder = isMain ? 'Main Branch Title...' : `Side ${sideIndex} Title...`;
     titleInput.addEventListener('input', (e) => {
-      blockData.title = e.target.value;
+      blockData.title = isCloaked(e.target) ? getRealBufferForElement(e.target) : e.target.value;
       const note = this.getActiveNote();
+      const page = this.getActivePage();
+      if (page) page.updatedAt = new Date().toISOString();
       if (note) note.updatedAt = new Date().toISOString();
       storage.scheduleSave();
     });
@@ -871,6 +1015,8 @@ export class MindFlowController {
       select.addEventListener('change', (e) => {
         blockData.reference = e.target.value;
         const note = this.getActiveNote();
+        const page = this.getActivePage();
+        if (page) page.updatedAt = new Date().toISOString();
         if (note) note.updatedAt = new Date().toISOString();
         storage.scheduleSave();
       });
@@ -924,6 +1070,8 @@ export class MindFlowController {
     textarea.addEventListener('input', (e) => {
       blockData.content = isCloaked(e.target) ? getRealBufferForElement(e.target) : e.target.value;
       const note = this.getActiveNote();
+      const page = this.getActivePage();
+      if (page) page.updatedAt = new Date().toISOString();
       if (note) note.updatedAt = new Date().toISOString();
       storage.scheduleSave();
 
@@ -1064,6 +1212,8 @@ export class MindFlowController {
 
     mainBlockData.content = textarea.value;
     const note = this.getActiveNote();
+    const page = this.getActivePage();
+    if (page) page.updatedAt = new Date().toISOString();
     if (note) note.updatedAt = new Date().toISOString();
     storage.scheduleSave();
 

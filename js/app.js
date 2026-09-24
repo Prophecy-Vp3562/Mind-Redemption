@@ -5,6 +5,7 @@
  */
 
 import {
+  storage,
   loadStorageData,
   getActiveWorkspace,
   setActiveWorkspace,
@@ -12,7 +13,8 @@ import {
   clearAdminSession,
   getVaultProfile,
   verifyAdminPassword,
-  flushAdminSaveAndSwapToDecoy
+  flushAdminSaveAndSwapToDecoy,
+  logoutAdminVault
 } from './fs-storage.js';
 import { initMindFlow } from './mindflow.js';
 import { initNotes } from './notes.js';
@@ -25,6 +27,177 @@ const VALID_TABS = ['mindflow', 'notes', 'diary'];
 
 let duressToastTimer = null;
 let isProcessingTrigger = false;
+
+// --- Global Scope State Contract ---
+window.viewScope = 'today';
+
+/**
+ * Compares an ISO timestamp or date string against the current local date YYYY-MM-DD
+ */
+export function isToday(dateStr) {
+  if (!dateStr) return false;
+  if (typeof dateStr === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateStr.trim())) {
+    const now = new Date();
+    const pad = n => String(n).padStart(2, '0');
+    const todayStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+    return dateStr.trim() === todayStr;
+  }
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return false;
+  const now = new Date();
+  return d.getFullYear() === now.getFullYear() &&
+         d.getMonth() === now.getMonth() &&
+         d.getDate() === now.getDate();
+}
+window.isToday = isToday;
+
+/**
+ * Returns the currently active tab ID
+ */
+export function getActiveTab() {
+  const activeBtn = document.querySelector('.nav-tab-btn.active');
+  if (activeBtn && activeBtn.dataset.tab) {
+    return activeBtn.dataset.tab;
+  }
+  const workspace = getActiveWorkspace();
+  return (workspace && workspace.currentTab) || 'mindflow';
+}
+
+/**
+ * Sets the active view scope and triggers UI updates and tab re-rendering
+ */
+export function setViewScope(scope) {
+  if (scope !== 'today' && scope !== 'all-time') return;
+  window.viewScope = scope;
+  updateScopeUI();
+
+  // Re-render the active tab (Notes or Mind Flow; Diary is strictly excluded)
+  const activeTab = getActiveTab();
+  if (activeTab === 'notes') {
+    initNotes();
+  } else if (activeTab === 'mindflow') {
+    initMindFlow();
+  }
+}
+window.setViewScope = setViewScope;
+
+/**
+ * Updates UI indicators and popover checkmarks based on window.viewScope
+ */
+export function updateScopeUI() {
+  const isAllTime = window.viewScope === 'all-time';
+
+  // Toggle pills
+  const pillHeader = document.getElementById('scope-indicator-pill');
+  if (pillHeader) {
+    pillHeader.classList.toggle('hidden', !isAllTime);
+  }
+
+  const pillSearch = document.getElementById('notes-search-scope-pill');
+  if (pillSearch) {
+    pillSearch.classList.toggle('hidden', !isAllTime);
+  }
+
+  // Update menu item states
+  const menuItems = document.querySelectorAll('.scope-dropdown-item');
+  menuItems.forEach(item => {
+    const itemScope = item.dataset.scope;
+    if (itemScope) {
+      const isActive = itemScope === window.viewScope;
+      item.classList.toggle('active', isActive);
+    }
+  });
+
+  const trigger = document.getElementById('brand-scope-trigger');
+  if (trigger) {
+    trigger.setAttribute('title', isAllTime ? 'Current: All-Time Archives (Click to switch)' : "Current: Today's Space (Click to switch)");
+  }
+}
+
+/**
+ * Initializes brand dropdown trigger and event handlers
+ */
+export function initScopeDropdown() {
+  const trigger = document.getElementById('brand-scope-trigger');
+  const menu = document.getElementById('scope-dropdown-menu');
+  const resetBtnHeader = document.getElementById('scope-pill-reset-btn');
+  const resetBtnSearch = document.getElementById('notes-search-pill-reset-btn');
+
+  if (!trigger || !menu) return;
+
+  const openMenu = () => {
+    menu.classList.remove('hidden');
+    trigger.classList.add('active');
+    trigger.setAttribute('aria-expanded', 'true');
+  };
+
+  const closeMenu = () => {
+    menu.classList.add('hidden');
+    trigger.classList.remove('active');
+    trigger.setAttribute('aria-expanded', 'false');
+  };
+
+  const toggleMenu = () => {
+    if (menu.classList.contains('hidden')) {
+      openMenu();
+    } else {
+      closeMenu();
+    }
+  };
+
+  trigger.addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleMenu();
+  });
+
+  // Scope menu option buttons
+  const menuItems = menu.querySelectorAll('.scope-dropdown-item');
+  menuItems.forEach(item => {
+    item.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (item.id === 'scope-bin-item') {
+        closeMenu();
+        openBinModal();
+        return;
+      }
+      const scope = item.dataset.scope;
+      if (scope) {
+        setViewScope(scope);
+      }
+      closeMenu();
+    });
+  });
+
+  // Reset buttons on pill indicators
+  if (resetBtnHeader) {
+    resetBtnHeader.addEventListener('click', (e) => {
+      e.stopPropagation();
+      setViewScope('today');
+    });
+  }
+  if (resetBtnSearch) {
+    resetBtnSearch.addEventListener('click', (e) => {
+      e.stopPropagation();
+      setViewScope('today');
+    });
+  }
+
+  // Click outside closes popover
+  document.addEventListener('click', (e) => {
+    if (!menu.classList.contains('hidden') && !menu.contains(e.target) && !trigger.contains(e.target)) {
+      closeMenu();
+    }
+  });
+
+  // Escape key closes popover
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !menu.classList.contains('hidden')) {
+      closeMenu();
+    }
+  });
+
+  updateScopeUI();
+}
 
 /**
  * Applies the selected theme (dark or light) to root and body
@@ -57,6 +230,11 @@ export function toggleTheme() {
 export function switchTab(tabName) {
   if (!VALID_TABS.includes(tabName)) return;
 
+  // If in Cloak mode, reveal and persist genuine text before swapping tab view
+  if (isCloaked()) {
+    revealCloak();
+  }
+
   const tabButtons = {
     mindflow: document.getElementById('tab-mindflow'),
     notes: document.getElementById('tab-notes'),
@@ -86,6 +264,10 @@ export function switchTab(tabName) {
   // Re-render diary or active tab views if needed
   if (tabName === 'diary') {
     initDiary();
+  } else if (tabName === 'notes') {
+    initNotes();
+  } else if (tabName === 'mindflow') {
+    initMindFlow();
   }
 
   // Telemetry: Track active session module
@@ -291,6 +473,12 @@ async function handleAdminAuthSubmit(e) {
     const badge = document.getElementById('admin-session-badge');
     if (badge) badge.classList.remove('hidden');
 
+    updateScopeUI();
+    refreshBinUI();
+
+    // Initialize 5-minute inactivity watchdog
+    resetAdminIdleTimer();
+
     const workspace = getActiveWorkspace() || { currentTab: 'mindflow' };
     switchTab(workspace.currentTab || 'mindflow');
   } else {
@@ -340,12 +528,18 @@ function collectUnsavedActiveInputs() {
  * "Flush-Then-Swap" Atomic Exit Routine:
  * Swaps UI to decoy in < 16ms while saving admin state asynchronously in background
  */
-export function executeFlushAndSwapExit() {
+export function executeFlushAndSwapExit(noticeMsg = null) {
+  // Clear any active idle watchdog timer
+  clearAdminIdleTimer();
+
   // 1. Collect any unsaved text in active inputs/blocks
   collectUnsavedActiveInputs();
 
   // 2, 3, 4: Immediately fire background async save, clear timeouts, purge admin session, hot-swap memory state (<1ms)
   flushAdminSaveAndSwapToDecoy();
+
+  // Revoke session token on companion server
+  logoutAdminVault();
 
   // 5. Instantly re-render workspace (<16ms)
   // Close any open modals
@@ -355,6 +549,9 @@ export function executeFlushAndSwapExit() {
   if (pageModal) pageModal.classList.add('hidden');
   const timelineModal = document.getElementById('timeline-modal');
   if (timelineModal) timelineModal.classList.add('hidden');
+  const binModal = document.getElementById('bin-view-modal');
+  if (binModal) binModal.classList.add('hidden');
+  refreshBinUI();
 
   // Re-render components with decoy state
   try { initMindFlow(); } catch (err) { console.error('MindFlow decoy init error:', err); }
@@ -367,8 +564,14 @@ export function executeFlushAndSwapExit() {
   if (badge) badge.classList.add('hidden');
 
   // Restore decoy workspace tab
+  window.viewScope = 'today';
+  updateScopeUI();
   const workspace = getActiveWorkspace() || { currentTab: 'mindflow' };
   switchTab(workspace.currentTab || 'mindflow');
+
+  if (noticeMsg) {
+    showDuressNotice(noticeMsg);
+  }
 }
 
 /**
@@ -422,6 +625,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Initialize Chameleon Masking / Typing Cloak Engine
   initCloakEngine();
 
+  // Initialize View Scope Dropdown & Pill Indicators
+  initScopeDropdown();
+
   // 1. Rehydrate theme from localStorage (default: dark)
   const savedTheme = localStorage.getItem(THEME_KEY) || 'dark';
   applyTheme(savedTheme);
@@ -472,12 +678,31 @@ document.addEventListener('DOMContentLoaded', async () => {
     cancelBtn.addEventListener('click', closeAdminAuthModal);
   }
 
-  // 7. Global Hotkeys & Modal Cancel (Escape)
+  // 7. Global Hotkeys, 2-Second Escape Key Hold Panic Lock & Modal Cancel
+  let escHoldTimer = null;
+  let escHoldTriggered = false;
+
   window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
+      // 2-Second Hold Panic Lock detector
+      if (!escHoldTimer && !e.repeat) {
+        escHoldTimer = setTimeout(() => {
+          escHoldTriggered = true;
+          if (getVaultProfile() === 'admin') {
+            executeFlushAndSwapExit('Panic Lock: Admin vault locked and session cleared.');
+          }
+        }, 2000);
+      }
+
+      // Normal modal / UI close on Escape
       const authModal = document.getElementById('admin-auth-modal');
       if (authModal && !authModal.classList.contains('hidden')) {
         closeAdminAuthModal();
+        return;
+      }
+      const binModal = document.getElementById('bin-view-modal');
+      if (binModal && !binModal.classList.contains('hidden')) {
+        closeBinModal();
         return;
       }
     }
@@ -496,4 +721,318 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     }
   });
+
+  window.addEventListener('keyup', (e) => {
+    if (e.key === 'Escape') {
+      if (escHoldTimer) {
+        clearTimeout(escHoldTimer);
+        escHoldTimer = null;
+      }
+      if (escHoldTriggered) {
+        e.preventDefault();
+        e.stopPropagation();
+        escHoldTriggered = false;
+        return;
+      }
+    }
+  });
+
+  // 8. Recycle Bin Modal & Action Listeners
+  initBinListeners();
+
+  // 9. Inactivity Watchdog Listeners
+  setupIdleWatchdog();
 });
+
+// ==========================================================================
+// Recycle Bin (Trash) Subsystem
+// ==========================================================================
+
+export function formatTrashDate(isoStr) {
+  if (!isoStr) return '';
+  const d = new Date(isoStr);
+  if (isNaN(d.getTime())) return isoStr;
+  const day = String(d.getDate()).padStart(2, '0');
+  const monthNames = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+  ];
+  const month = monthNames[d.getMonth()];
+  const year = d.getFullYear();
+  let hours = d.getHours();
+  const minutes = String(d.getMinutes()).padStart(2, '0');
+  const ampm = hours >= 12 ? 'PM' : 'AM';
+  hours = hours % 12;
+  hours = hours ? hours : 12;
+  const hourStr = String(hours).padStart(2, '0');
+  return `${day} ${month} ${year}, ${hourStr}:${minutes} ${ampm}`;
+}
+
+function getTrashTextPreview(item) {
+  if (!item || !item.payload) return 'No preview available';
+  const p = item.payload;
+  if (item.type === 'note') {
+    return p.content || p.body || '(Empty note content)';
+  } else if (item.type === 'mindflow') {
+    if (p._isSlide && p.blocks) {
+      return p.blocks.main?.content || Object.values(p.blocks).map(b => b.content).filter(Boolean).join(' ') || '(Empty slide content)';
+    } else if (p.pages && p.pages.length > 0) {
+      const firstPage = p.pages[0];
+      return firstPage.blocks?.main?.content || Object.values(firstPage.blocks || {}).map(b => b.content).filter(Boolean).join(' ') || `Book with ${p.pages.length} pages`;
+    }
+  }
+  return '(No text content)';
+}
+
+export function openBinModal() {
+  const modal = document.getElementById('bin-view-modal');
+  if (!modal) return;
+  modal.classList.remove('hidden');
+  refreshBinUI();
+}
+window.openBinModal = openBinModal;
+
+export function closeBinModal() {
+  const modal = document.getElementById('bin-view-modal');
+  if (modal) {
+    modal.classList.add('hidden');
+  }
+}
+window.closeBinModal = closeBinModal;
+
+export function refreshBinUI() {
+  const container = document.getElementById('bin-items-container');
+  const emptyState = document.getElementById('bin-empty-state');
+  const countBadge = document.getElementById('bin-item-count-badge');
+  const emptyBtn = document.getElementById('bin-empty-btn');
+  if (!container) return;
+
+  const trash = storage.getTrashData() || [];
+  // Sort reverse-chronological (most recently deleted at the top)
+  const sorted = [...trash].sort((a, b) => new Date(b.deletedAt || 0) - new Date(a.deletedAt || 0));
+
+  if (countBadge) {
+    countBadge.textContent = `${sorted.length} ${sorted.length === 1 ? 'item' : 'items'}`;
+  }
+
+  if (emptyBtn) {
+    emptyBtn.disabled = sorted.length === 0;
+  }
+
+  if (sorted.length === 0) {
+    container.innerHTML = '';
+    emptyState?.classList.remove('hidden');
+    return;
+  }
+
+  emptyState?.classList.add('hidden');
+  container.innerHTML = '';
+
+  sorted.forEach(item => {
+    const card = document.createElement('div');
+    card.className = 'bin-card';
+    card.dataset.id = item.id;
+
+    const isNote = item.type === 'note';
+    const typeLabel = isNote ? 'Note' : 'Mind Flow';
+    const typeClass = isNote ? 'bin-type-note' : 'bin-type-mindflow';
+    const formattedDate = formatTrashDate(item.deletedAt);
+    const previewText = getTrashTextPreview(item);
+
+    card.innerHTML = `
+      <div class="bin-card-top">
+        <div class="bin-card-type-and-title">
+          <span class="bin-type-badge ${typeClass}">[${typeLabel}]</span>
+          <h4 class="bin-card-title" title="${escapeHtml(item.title || 'Untitled')}">${escapeHtml(item.title || 'Untitled')}</h4>
+        </div>
+        <span class="bin-card-date">${formattedDate}</span>
+      </div>
+      <div class="bin-card-preview">${escapeHtml(previewText)}</div>
+      <div class="bin-card-actions">
+        <button class="btn-bin-restore" data-id="${item.id}" title="Restore back to active workspace">↩ Restore</button>
+        <button class="btn-bin-purge" data-id="${item.id}" title="Permanently delete item">✕ Delete Permanently</button>
+      </div>
+    `;
+
+    // Action listeners
+    card.querySelector('.btn-bin-restore')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      restoreTrashItem(item.id);
+    });
+
+    card.querySelector('.btn-bin-purge')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      permanentlyDeleteTrashItem(item.id);
+    });
+
+    container.appendChild(card);
+  });
+}
+window.refreshBinUI = refreshBinUI;
+
+export function restoreTrashItem(id) {
+  const trash = storage.getTrashData();
+  const idx = trash.findIndex(t => t.id === id);
+  if (idx === -1) return;
+
+  const [item] = trash.splice(idx, 1);
+  if (!item || !item.payload) {
+    storage.scheduleSave(0);
+    refreshBinUI();
+    return;
+  }
+
+  if (item.type === 'note') {
+    const notesData = storage.getNotesData();
+    if (!notesData.items) notesData.items = [];
+    notesData.items.unshift(item.payload);
+    initNotes();
+  } else if (item.type === 'mindflow') {
+    const mfData = storage.getMindFlowData();
+    if (!mfData.books && !mfData.notes) mfData.books = [];
+    const books = mfData.books || mfData.notes;
+
+    if (item.payload._isSlide) {
+      const slide = item.payload;
+      const parentId = slide._parentBookId;
+      delete slide._isSlide;
+      delete slide._parentBookId;
+      delete slide._parentBookTitle;
+
+      const parentBook = books.find(b => b.id === parentId);
+      if (parentBook) {
+        if (!parentBook.pages) parentBook.pages = [];
+        parentBook.pages.push(slide);
+        parentBook.updatedAt = new Date().toISOString();
+      } else {
+        // Parent book no longer exists, restore slide as its own book
+        const newBook = {
+          id: 'note_' + Date.now(),
+          title: item.title || 'Restored Slide Note',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          pages: [slide]
+        };
+        books.unshift(newBook);
+      }
+    } else {
+      books.unshift(item.payload);
+    }
+    initMindFlow();
+  }
+
+  storage.scheduleSave(0);
+  refreshBinUI();
+}
+
+export function permanentlyDeleteTrashItem(id) {
+  const trash = storage.getTrashData();
+  const item = trash.find(t => t.id === id);
+  if (!item) return;
+
+  if (confirm(`Permanently delete "${item.title || 'Untitled'}"? This action cannot be undone.`)) {
+    const idx = trash.findIndex(t => t.id === id);
+    if (idx !== -1) {
+      trash.splice(idx, 1);
+      storage.scheduleSave(0);
+      refreshBinUI();
+    }
+  }
+}
+
+export function emptyBinPermanently() {
+  const trash = storage.getTrashData();
+  if (!trash || trash.length === 0) return;
+
+  if (confirm(`Are you sure you want to permanently delete all ${trash.length} items from the Recycle Bin? This action cannot be undone.`)) {
+    trash.length = 0;
+    storage.scheduleSave(0);
+    refreshBinUI();
+  }
+}
+
+function initBinListeners() {
+  const modal = document.getElementById('bin-view-modal');
+  const closeBtn = document.getElementById('bin-modal-close-btn');
+  const emptyBtn = document.getElementById('bin-empty-btn');
+
+  closeBtn?.addEventListener('click', closeBinModal);
+  emptyBtn?.addEventListener('click', emptyBinPermanently);
+
+  modal?.addEventListener('click', (e) => {
+    if (e.target === modal) {
+      closeBinModal();
+    }
+  });
+}
+
+function escapeHtml(str) {
+  if (!str) return '';
+  return str.replace(/[&<>'"]/g, 
+    tag => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      "'": '&#39;',
+      '"': '&quot;'
+    }[tag] || tag)
+  );
+}
+
+// ==========================================================================
+// 5-Minute Inactivity Watchdog Subsystem
+// ==========================================================================
+
+let adminIdleTimer = null;
+const ADMIN_IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+
+export function resetAdminIdleTimer() {
+  if (getVaultProfile() !== 'admin') {
+    if (adminIdleTimer) {
+      clearTimeout(adminIdleTimer);
+      adminIdleTimer = null;
+    }
+    return;
+  }
+
+  if (adminIdleTimer) {
+    clearTimeout(adminIdleTimer);
+  }
+
+  adminIdleTimer = setTimeout(triggerAdminAutoLock, ADMIN_IDLE_TIMEOUT_MS);
+}
+window.resetAdminIdleTimer = resetAdminIdleTimer;
+
+export function clearAdminIdleTimer() {
+  if (adminIdleTimer) {
+    clearTimeout(adminIdleTimer);
+    adminIdleTimer = null;
+  }
+}
+window.clearAdminIdleTimer = clearAdminIdleTimer;
+
+export function triggerAdminAutoLock() {
+  if (getVaultProfile() !== 'admin') return;
+  clearAdminIdleTimer();
+  executeFlushAndSwapExit('Session expired due to inactivity.');
+}
+window.triggerAdminAutoLock = triggerAdminAutoLock;
+
+function setupIdleWatchdog() {
+  const ACTIVITY_EVENTS = ['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart'];
+  let throttleTimer = null;
+
+  const onActivity = () => {
+    if (getVaultProfile() !== 'admin') return;
+    if (throttleTimer) return;
+    throttleTimer = setTimeout(() => {
+      throttleTimer = null;
+    }, 1000);
+    resetAdminIdleTimer();
+  };
+
+  ACTIVITY_EVENTS.forEach(evt => {
+    window.addEventListener(evt, onActivity, { passive: true });
+  });
+}
+

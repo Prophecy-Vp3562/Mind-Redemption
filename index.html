@@ -25,7 +25,47 @@
         <div class="brand-symbol">
           <span class="symbol-dot"></span>
         </div>
-        <h1 class="brand-title">Mind Redemption</h1>
+        <div class="brand-scope-wrapper">
+          <button id="brand-scope-trigger" class="brand-scope-trigger" aria-haspopup="true" aria-expanded="false" title="Switch View Scope (Today / All Time)">
+            <h1 class="brand-title">Mind Redemption</h1>
+            <span class="brand-dropdown-arrow" aria-hidden="true">▾</span>
+          </button>
+
+          <!-- Scope Indicator Pill (visible when viewScope === 'all-time') -->
+          <div id="scope-indicator-pill" class="scope-indicator-pill hidden" title="Current Scope: All Time Archives">
+            <span class="pill-scope-text">All Time</span>
+            <button id="scope-pill-reset-btn" class="pill-scope-reset" title="Reset to Today's Space" aria-label="Reset to Today's Space">[✕ Today]</button>
+          </div>
+
+          <!-- Stealth Dropdown Popover Menu -->
+          <div id="scope-dropdown-menu" class="scope-dropdown-menu hidden" role="menu" aria-label="View Scope">
+            <div class="scope-menu-header">View Scope</div>
+            <button class="scope-dropdown-item active" data-scope="today" role="menuitem">
+              <span class="scope-item-icon">📅</span>
+              <div class="scope-item-content">
+                <span class="scope-item-title">Today's Space <span class="scope-badge-default">(Default)</span></span>
+                <span class="scope-item-desc">Focus on thoughts touched today</span>
+              </div>
+              <span class="scope-item-check">✓</span>
+            </button>
+            <button class="scope-dropdown-item" data-scope="all-time" role="menuitem">
+              <span class="scope-item-icon">📜</span>
+              <div class="scope-item-content">
+                <span class="scope-item-title">All-Time Archives</span>
+                <span class="scope-item-desc">Notes &amp; Mind Flow</span>
+              </div>
+              <span class="scope-item-check">✓</span>
+            </button>
+            <div class="scope-menu-divider"></div>
+            <button class="scope-dropdown-item" id="scope-bin-item" role="menuitem">
+              <span class="scope-item-icon">🗑️</span>
+              <div class="scope-item-content">
+                <span class="scope-item-title">Bin / Trash</span>
+                <span class="scope-item-desc">Recycle bin &amp; restore ledger</span>
+              </div>
+            </button>
+          </div>
+        </div>
       </div>
 
       <!-- Main Navigation Tabs -->
@@ -168,6 +208,10 @@
             <div class="notes-search-bar">
               <span class="search-icon">🔍</span>
               <input type="text" id="notes-search-input" placeholder="Search notes..." autocomplete="off">
+              <div id="notes-search-scope-pill" class="scope-indicator-pill hidden" title="Current Scope: All Time Archives">
+                <span class="pill-scope-text">All Time</span>
+                <button id="notes-search-pill-reset-btn" class="pill-scope-reset" title="Reset to Today's Space" aria-label="Reset to Today's Space">[✕ Today]</button>
+              </div>
             </div>
           </div>
 
@@ -346,6 +390,34 @@
           <div class="legend-item"><span class="legend-dot dot-notes"></span> Notes</div>
           <div class="legend-item"><span class="legend-dot dot-diary"></span> Diary</div>
           <span class="legend-hint">Badge indicates active focus time</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Recycle Bin View Modal -->
+    <div id="bin-view-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="bin-modal-title">
+      <div class="modal-card bin-modal-card">
+        <div class="bin-modal-header">
+          <div class="bin-header-title-group">
+            <span class="bin-header-icon">🗑️</span>
+            <h3 id="bin-modal-title" class="bin-modal-title">Recycle Bin</h3>
+            <span id="bin-item-count-badge" class="bin-count-badge">0 items</span>
+          </div>
+          <div class="bin-header-actions">
+            <button id="bin-empty-btn" class="btn btn-sm btn-danger-ghost" title="Permanently delete all items in trash">Empty Bin Permanently</button>
+            <button id="bin-modal-close-btn" class="modal-close-btn" aria-label="Close Recycle Bin">✕</button>
+          </div>
+        </div>
+
+        <div class="bin-modal-body">
+          <div id="bin-items-container" class="bin-items-grid">
+            <!-- Dynamically populated trash cards -->
+          </div>
+          <div id="bin-empty-state" class="bin-empty-state hidden">
+            <div class="bin-empty-icon">🗑️</div>
+            <h4>Recycle Bin is Empty</h4>
+            <p>Deleted notes and Mind Flow entries will appear here until permanently emptied.</p>
+          </div>
         </div>
       </div>
     </div>

@@ -13,6 +13,7 @@
 import { storage } from './fs-storage.js';
 import { logTimelineEvent, getTimeMachineDate, onTimeMachineChange, formatDateDMY } from './timeline.js';
 import { isCloaked, getRealBufferForElement } from './cloak.js';
+import { isToday } from './app.js';
 
 const NOTE_COLORS = [
   { name: 'Default', value: 'var(--card-bg)' },
@@ -243,7 +244,21 @@ export class NotesController {
     if (!this.notesGrid) return;
     this.notesGrid.innerHTML = '';
 
-    let notes = this.getNotes();
+    const checkIsToday = typeof isToday === 'function' ? isToday : (typeof window.isToday === 'function' ? window.isToday : () => false);
+
+    let allNotes = this.getNotes() || [];
+
+    const shouldShowNote = (note) => {
+      // Pinned notes transcend date filters and appear on every day
+      if (note.isPinned || note.pinned) return true;
+
+      if (window.viewScope === 'all-time') return true;
+
+      // Default "Today" filter for unpinned notes
+      return checkIsToday(note.createdAt) || checkIsToday(note.updatedAt);
+    };
+
+    let notes = allNotes.filter(shouldShowNote);
 
     // Filter by search query
     if (this.searchQuery) {
@@ -253,20 +268,45 @@ export class NotesController {
       );
     }
 
+    // Sort newest first by last edited / created timestamp
+    notes.sort((a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0));
+
     if (notes.length === 0) {
+      let emptyTitle = 'No notes yet';
+      let emptyMsg = 'Click the input box above or the "+ New Note" button to jot down an idea.';
+      let switchBtnHtml = '';
+
+      if (this.searchQuery) {
+        emptyTitle = 'No matching notes found';
+        emptyMsg = 'Try another search keyword.';
+      } else if (isTodayMode) {
+        emptyTitle = 'No notes written today';
+        emptyMsg = 'No notes written today. Capture a thought below or switch to All Time.';
+        switchBtnHtml = `<button id="btn-notes-switch-all-time" class="btn btn-secondary btn-sm" style="margin-top: 14px;">Switch to All Time</button>`;
+      }
+
       this.notesGrid.innerHTML = `
         <div class="empty-notes-prompt">
           <div class="empty-icon">📝</div>
-          <h3>${this.searchQuery ? 'No matching notes found' : 'No notes yet'}</h3>
-          <p>${this.searchQuery ? 'Try another search keyword.' : 'Click the input box above or the "+ New Note" button to jot down an idea.'}</p>
+          <h3>${emptyTitle}</h3>
+          <p>${emptyMsg}</p>
+          ${switchBtnHtml}
         </div>
       `;
+
+      if (switchBtnHtml) {
+        document.getElementById('btn-notes-switch-all-time')?.addEventListener('click', () => {
+          if (typeof window.setViewScope === 'function') {
+            window.setViewScope('all-time');
+          }
+        });
+      }
       return;
     }
 
     // Separate pinned and others
-    const pinned = notes.filter(n => n.pinned);
-    const others = notes.filter(n => !n.pinned);
+    const pinned = notes.filter(n => n.pinned || n.isPinned);
+    const others = notes.filter(n => !(n.pinned || n.isPinned));
 
     if (pinned.length > 0) {
       const pinnedHeader = document.createElement('div');
@@ -319,8 +359,10 @@ export class NotesController {
       tmClass = isMatch ? 'time-machine-match' : 'time-machine-dimmed';
     }
 
+    const isPinned = !!(note.pinned || note.isPinned);
+
     const card = document.createElement('div');
-    card.className = `note-card ${note.pinned ? 'is-pinned' : ''} ${tmClass}`;
+    card.className = `note-card ${isPinned ? 'is-pinned' : ''} ${tmClass}`;
     if (note.color && note.color !== NOTE_COLORS[0].value) {
       card.style.backgroundColor = note.color;
     }
@@ -328,7 +370,7 @@ export class NotesController {
     const lastEdited = formatDateDMY(note.updatedAt || note.createdAt);
 
     card.innerHTML = `
-      <div class="note-card-pin ${note.pinned ? 'active' : ''}" title="${note.pinned ? 'Unpin' : 'Pin note'}">
+      <div class="note-card-pin ${isPinned ? 'active' : ''}" title="${isPinned ? 'Unpin note' : 'Pin note'}">
         📌
       </div>
       ${note.title ? `<h4 class="note-card-title">${escapeHTML(note.title)}</h4>` : ''}
@@ -350,7 +392,9 @@ export class NotesController {
     // Pin click
     card.querySelector('.note-card-pin')?.addEventListener('click', (e) => {
       e.stopPropagation();
-      note.pinned = !note.pinned;
+      const newPinned = !isPinned;
+      note.pinned = newPinned;
+      note.isPinned = newPinned;
       note.updatedAt = new Date().toISOString();
       storage.scheduleSave();
       this.render();
@@ -359,12 +403,23 @@ export class NotesController {
     // Delete click
     card.querySelector('.delete-note-btn')?.addEventListener('click', (e) => {
       e.stopPropagation();
-      if (confirm(`Delete "${note.title || 'Untitled Note'}"?`)) {
+      if (confirm(`Move "${note.title || 'Untitled Note'}" to the Recycle Bin?`)) {
         const notes = this.getNotes();
         const idx = notes.findIndex(n => n.id === note.id);
         if (idx !== -1) {
-          notes.splice(idx, 1);
+          const [deletedItem] = notes.splice(idx, 1);
+          const trash = storage.getTrashData();
+          trash.unshift({
+            id: 'trash_' + Date.now(),
+            type: 'note',
+            title: deletedItem.title || 'Untitled Note',
+            deletedAt: new Date().toISOString(),
+            payload: deletedItem
+          });
           storage.scheduleSave();
+          if (typeof window.refreshBinUI === 'function') {
+            window.refreshBinUI();
+          }
           this.render();
         }
       }
@@ -381,7 +436,7 @@ export class NotesController {
       this.activeEditNoteId = note.id;
       this.modalTitle.value = note.title || '';
       this.modalBody.value = note.content || '';
-      this.isModalPinned = !!note.pinned;
+      this.isModalPinned = !!(note.pinned || note.isPinned);
       this.modalPinBtn?.classList.toggle('active', this.isModalPinned);
       if (this.modalDeleteBtn) this.modalDeleteBtn.style.display = 'inline-flex';
     } else {
@@ -445,12 +500,25 @@ export class NotesController {
 
   deleteActiveModalNote() {
     if (!this.activeEditNoteId) return;
-    if (confirm('Delete this note?')) {
-      const notes = this.getNotes();
+    const notes = this.getNotes();
+    const note = notes.find(n => n.id === this.activeEditNoteId);
+    if (!note) return;
+    if (confirm(`Move "${note.title || 'Untitled Note'}" to the Recycle Bin?`)) {
       const idx = notes.findIndex(n => n.id === this.activeEditNoteId);
       if (idx !== -1) {
-        notes.splice(idx, 1);
+        const [deletedItem] = notes.splice(idx, 1);
+        const trash = storage.getTrashData();
+        trash.unshift({
+          id: 'trash_' + Date.now(),
+          type: 'note',
+          title: deletedItem.title || 'Untitled Note',
+          deletedAt: new Date().toISOString(),
+          payload: deletedItem
+        });
         storage.scheduleSave();
+        if (typeof window.refreshBinUI === 'function') {
+          window.refreshBinUI();
+        }
       }
       this.closeEditModal();
     }
@@ -460,10 +528,14 @@ export class NotesController {
     if (!this.activeEditNoteId) return;
     const note = this.getNotes().find(n => n.id === this.activeEditNoteId);
     if (note) {
-      note.pinned = !note.pinned;
-      this.modalPinBtn.classList.toggle('active', note.pinned);
+      const newPinned = !(note.pinned || note.isPinned);
+      note.pinned = newPinned;
+      note.isPinned = newPinned;
+      this.isModalPinned = newPinned;
+      this.modalPinBtn.classList.toggle('active', newPinned);
       note.updatedAt = new Date().toISOString();
       storage.scheduleSave();
+      this.render();
     }
   }
 }
