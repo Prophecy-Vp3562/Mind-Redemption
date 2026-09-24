@@ -18,7 +18,7 @@ let currentSession = {
   lastTickTime: Date.now()
 };
 
-let isTabVisible = !document.hidden;
+let isTabVisible = typeof document !== 'undefined' ? !document.hidden : true;
 let isUserIdle = false;
 let idleTimer = null;
 let flushTimer = null;
@@ -119,7 +119,7 @@ export async function flushActiveSession() {
   const duration = Math.round(currentSession.accumulatedSeconds);
   if (duration <= 0) return;
 
-  const targetDate = activeTimeMachineDate || new Date().toISOString().split('T')[0];
+  const targetDate = activeTimeMachineDate || getTodayDateString();
   const sessionPayload = {
     id: 'ses_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
     module: currentSession.module,
@@ -148,7 +148,7 @@ export async function flushActiveSession() {
  * Log a user action event (CREATE, EDIT, DELETE)
  */
 export async function logTimelineEvent(moduleName, action, entityId, title = '', summary = '') {
-  const targetDate = activeTimeMachineDate || new Date().toISOString().split('T')[0];
+  const targetDate = activeTimeMachineDate || getTodayDateString();
   const eventPayload = {
     id: 'evt_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
     timestamp: new Date().toISOString(),
@@ -215,31 +215,64 @@ export async function fetchTimelineData() {
 }
 
 /**
- * Format date string or Date object to "Day, DD Month YYYY" or "DD Month YYYY"
- * Example: "Sunday, 20 September 2026" or "20 September 2026"
+ * Timezone-Safe Date Parsing & Formatting
+ * Guarantees local midnight, preventing UTC rollback drift
  */
-export function formatDateDisplay(dateInput, includeWeekday = false) {
-  if (!dateInput) return '';
-  let dateObj;
-  if (typeof dateInput === 'string' && dateInput.includes('-')) {
-    const parts = dateInput.split('T')[0].split('-').map(Number);
-    if (parts.length === 3) {
-      dateObj = new Date(parts[0], parts[1] - 1, parts[2]);
+export function parseLocalDateString(dateStr) {
+  if (!dateStr) return new Date();
+  if (typeof dateStr === 'string' && dateStr.includes('-')) {
+    const [year, month, day] = dateStr.split('T')[0].split('-').map(Number);
+    if (!isNaN(year) && !isNaN(month) && !isNaN(day)) {
+      return new Date(year, month - 1, day); // Guarantees local midnight, no UTC rollback
     }
   }
-  if (!dateObj) {
-    dateObj = new Date(dateInput);
-  }
-  if (isNaN(dateObj.getTime())) return String(dateInput);
+  const d = new Date(dateStr);
+  return isNaN(d.getTime()) ? new Date() : d;
+}
 
+/**
+ * Format local year, monthIndex (0-11), and day (1-31) strictly to "YYYY-MM-DD"
+ */
+export function formatLocalDateToYMD(year, monthIndex, day) {
+  const pad = n => String(n).padStart(2, '0');
+  return `${year}-${pad(monthIndex + 1)}-${pad(day)}`;
+}
+
+/**
+ * Returns current local date in "YYYY-MM-DD" format without UTC drift
+ */
+export function getTodayDateString() {
+  const now = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
+
+/**
+ * Format date string or Date object to "Day, DD Month YYYY" (e.g. "Monday, 21 September 2026")
+ */
+export function formatFullDate(dateStr) {
+  if (!dateStr) return '';
+  const dateObj = parseLocalDateString(dateStr);
   const day = dateObj.getDate();
   const month = dateObj.toLocaleDateString('en-GB', { month: 'long' });
   const year = dateObj.getFullYear();
+  const weekday = dateObj.toLocaleDateString('en-GB', { weekday: 'long' });
+  return `${weekday}, ${day} ${month} ${year}`;
+}
 
+/**
+ * Format date string or Date object to "Day, DD Month YYYY" or "DD Month YYYY"
+ * Example: "Monday, 21 September 2026" or "21 September 2026"
+ */
+export function formatDateDisplay(dateInput, includeWeekday = false) {
+  if (!dateInput) return '';
   if (includeWeekday) {
-    const weekday = dateObj.toLocaleDateString('en-GB', { weekday: 'long' });
-    return `${weekday}, ${day} ${month} ${year}`;
+    return formatFullDate(dateInput);
   }
+  const dateObj = parseLocalDateString(dateInput);
+  const day = dateObj.getDate();
+  const month = dateObj.toLocaleDateString('en-GB', { month: 'long' });
+  const year = dateObj.getFullYear();
   return `${day} ${month} ${year}`;
 }
 
@@ -412,13 +445,13 @@ async function renderCalendarGrid() {
 
   grid.innerHTML = '';
 
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = getTodayDateString();
 
   // Render leading trailing days from previous month
   for (let i = firstDayIndex - 1; i >= 0; i--) {
     const dayNum = daysInPrevMonth - i;
     const prevDate = new Date(year, month - 1, dayNum);
-    const dateStr = prevDate.toISOString().split('T')[0];
+    const dateStr = formatLocalDateToYMD(prevDate.getFullYear(), prevDate.getMonth(), prevDate.getDate());
 
     const cell = createDayCell(dayNum, dateStr, byDate[dateStr], true);
     grid.appendChild(cell);
@@ -426,10 +459,9 @@ async function renderCalendarGrid() {
 
   // Render current month days
   for (let day = 1; day <= daysInMonth; day++) {
-    const curDate = new Date(year, month, day);
-    const dateStr = curDate.toISOString().split('T')[0];
+    const dateStr = formatLocalDateToYMD(year, month, day);
     const isToday = dateStr === todayStr;
-    const isSelected = dateStr === activeTimeMachineDate;
+    const isSelected = dateStr === (activeTimeMachineDate || todayStr);
 
     const cell = createDayCell(day, dateStr, byDate[dateStr], false, isToday, isSelected);
     grid.appendChild(cell);
@@ -438,7 +470,7 @@ async function renderCalendarGrid() {
   // Render trailing days to fill 7-column grid
   for (let nextDay = 1; nextDay <= remainingCells; nextDay++) {
     const nextDate = new Date(year, month + 1, nextDay);
-    const dateStr = nextDate.toISOString().split('T')[0];
+    const dateStr = formatLocalDateToYMD(nextDate.getFullYear(), nextDate.getMonth(), nextDate.getDate());
 
     const cell = createDayCell(nextDay, dateStr, byDate[dateStr], true);
     grid.appendChild(cell);
@@ -462,8 +494,8 @@ export async function renderDayChronicle(dateStr, dayData = null) {
   if (!chronicleEl || !headingEl || !eventsListEl) return;
 
   chronicleEl.classList.remove('hidden');
-  // Day Chronicle header: Day, DD Month YYYY (e.g. "Sunday, 20 September 2026")
-  headingEl.textContent = formatDateDisplay(dateStr, true);
+  // Day Chronicle header: Day, DD Month YYYY (e.g. "Monday, 21 September 2026")
+  headingEl.textContent = formatFullDate(dateStr);
 
   if (!dayData) {
     eventsListEl.innerHTML = '<div class="chronicle-empty">Loading chronicle...</div>';
@@ -545,7 +577,7 @@ function createDayCell(dayNum, dateStr, dayData, isOutside = false, isToday = fa
   cell.appendChild(dayHeader);
 
   // Set tooltip in "Day, DD Month YYYY" format
-  cell.title = formatDateDisplay(dateStr, true);
+  cell.title = formatFullDate(dateStr);
 
   // Module Activity Dots
   const dotContainer = document.createElement('div');
@@ -596,14 +628,16 @@ function createDayCell(dayNum, dateStr, dayData, isOutside = false, isToday = fa
 
   // Click to view day chronicle
   cell.addEventListener('click', () => {
+    const selectedDate = cell.dataset.date || dateStr;
     document.querySelectorAll('.calendar-day-cell.day-selected').forEach(c => c.classList.remove('day-selected'));
     cell.classList.add('day-selected');
-    renderDayChronicle(dateStr);
+    renderDayChronicle(selectedDate);
   });
 
   // Double click directly enters Time-Machine Mode
   cell.addEventListener('dblclick', () => {
-    activateTimeMachine(dateStr);
+    const selectedDate = cell.dataset.date || dateStr;
+    activateTimeMachine(selectedDate);
   });
 
   return cell;
