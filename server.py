@@ -353,7 +353,7 @@ migrate_legacy_timeline()
 
 @app.get("/api/health")
 async def health_check():
-    return {"status": "ok"}
+    return {"status": "ok", "service": "mind-redemption"}
 
 
 # ==========================================================

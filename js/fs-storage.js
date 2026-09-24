@@ -98,8 +98,10 @@ export async function verifyAdminPassword(password) {
     if (!res.ok) {
       return { success: false, message: 'Invalid administrative password' };
     }
+    setServerStatus(true);
     return await res.json();
   } catch (err) {
+    setServerStatus(false);
     return { success: false, message: 'Companion server offline or unreachable' };
   }
 }
@@ -145,17 +147,96 @@ function updateSyncStatusUI(status, text) {
   }
 }
 
+// Server Watchdog State
+if (typeof window !== 'undefined') {
+  window.isServerOnline = true;
+}
+
 /**
- * Health check for FastAPI server
+ * Updates UI and global state for server connectivity
+ */
+export function setServerStatus(isOnline) {
+  if (typeof window !== 'undefined') {
+    window.isServerOnline = !!isOnline;
+  }
+
+  const banner = document.getElementById('server-status-banner');
+  if (banner) {
+    if (isOnline) {
+      banner.classList.add('hidden');
+    } else {
+      banner.classList.remove('hidden');
+    }
+  }
+
+  if (!isOnline) {
+    updateSyncStatusUI('error', 'Server Offline (Run server.py)');
+  }
+}
+
+/**
+ * Health check watchdog for companion server with 2500ms timeout AbortController
  */
 export async function checkServerHealth() {
+  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const timeoutId = controller ? setTimeout(() => controller.abort(), 2500) : null;
+
   try {
-    const res = await fetch(`${API_BASE}/health`, { method: 'GET' });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const json = await res.json();
-    return json.status === 'ok';
+    const res = await fetch(`${API_BASE}/health`, {
+      method: 'GET',
+      signal: controller ? controller.signal : undefined
+    });
+    if (timeoutId) clearTimeout(timeoutId);
+
+    if (res.ok) {
+      const data = await res.json().catch(() => ({}));
+      const isOk = data.status === 'ok';
+      setServerStatus(isOk);
+      return isOk;
+    } else {
+      setServerStatus(false);
+      return false;
+    }
   } catch (err) {
+    if (timeoutId) clearTimeout(timeoutId);
+    setServerStatus(false);
     return false;
+  }
+}
+
+// Background polling every 5 seconds
+let watchdogInterval = null;
+export function startServerWatchdog() {
+  if (watchdogInterval) clearInterval(watchdogInterval);
+  checkServerHealth();
+  watchdogInterval = setInterval(checkServerHealth, 5000);
+}
+
+// Start watchdog on module boot
+if (typeof window !== 'undefined') {
+  startServerWatchdog();
+
+  // Retry Connection Button Listener
+  const bindRetryButton = () => {
+    const retryBtn = document.getElementById('retry-server-btn');
+    if (retryBtn && !retryBtn._watchdogBound) {
+      retryBtn._watchdogBound = true;
+      retryBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        retryBtn.textContent = 'Checking...';
+        checkServerHealth().finally(() => {
+          setTimeout(() => {
+            if (retryBtn) retryBtn.textContent = 'Retry Connection';
+          }, 600);
+        });
+      });
+    }
+  };
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', bindRetryButton);
+  } else {
+    bindRetryButton();
   }
 }
 
@@ -202,11 +283,13 @@ export async function loadStorageData() {
       decoyCachedState = JSON.parse(JSON.stringify(inMemoryState));
     }
 
+    setServerStatus(true);
     updateSyncStatusUI('saved', 'Saved');
 
     return inMemoryState;
   } catch (err) {
     console.error('loadStorageData error:', err);
+    setServerStatus(false);
     updateSyncStatusUI('error', 'Server Offline (Run server.py)');
     return inMemoryState;
   }
@@ -242,9 +325,11 @@ async function executeSave() {
       decoyCachedState = JSON.parse(JSON.stringify(inMemoryState));
     }
 
+    setServerStatus(true);
     updateSyncStatusUI('saved', 'Saved');
   } catch (err) {
     console.error('saveStorageData network error:', err);
+    setServerStatus(false);
     updateSyncStatusUI('error', 'Server Offline (Run server.py)');
   } finally {
     isSaving = false;
@@ -398,6 +483,11 @@ export const storage = {
     }
     return inMemoryState.trash;
   },
+  get isServerOnline() {
+    return typeof window !== 'undefined' ? !!window.isServerOnline : true;
+  },
+  checkServerHealth,
+  setServerStatus,
   onConnectionChange(listener) {
     checkServerHealth().then(ok => {
       listener({

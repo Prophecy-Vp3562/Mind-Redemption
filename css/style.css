@@ -3724,3 +3724,102 @@ body.chameleon-cloaked .symbol-dot {
   max-width: 320px;
   line-height: 1.4;
 }
+
+/* ==========================================================================
+   Local Companion Server Watchdog Banner
+   ========================================================================== */
+
+.server-status-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.85rem;
+  padding: 0.55rem 1.25rem;
+  background: rgba(245, 158, 11, 0.12);
+  border-bottom: 1px solid rgba(245, 158, 11, 0.28);
+  color: #fbbf24;
+  font-family: var(--font-sans, sans-serif);
+  font-size: 0.82rem;
+  line-height: 1.4;
+  position: relative;
+  z-index: 1000;
+  transition: max-height 0.3s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.25s ease, padding 0.3s ease;
+  overflow: hidden;
+  max-height: 80px;
+  opacity: 1;
+}
+
+[data-theme="light"] .server-status-banner {
+  background: rgba(217, 119, 6, 0.1);
+  border-bottom-color: rgba(217, 119, 6, 0.25);
+  color: #92400e;
+}
+
+.server-status-banner.hidden {
+  max-height: 0 !important;
+  opacity: 0 !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  border-bottom-width: 0 !important;
+  pointer-events: none !important;
+}
+
+.server-status-banner .status-icon {
+  font-size: 1.05rem;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.server-status-banner .status-text {
+  flex: 1;
+  max-width: 900px;
+  text-align: center;
+}
+
+.server-status-banner .status-text strong {
+  font-weight: 700;
+  color: inherit;
+}
+
+.server-status-banner .status-text code {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.78rem;
+  background: rgba(0, 0, 0, 0.25);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+[data-theme="light"] .server-status-banner .status-text code {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.btn-retry-status {
+  background: rgba(245, 158, 11, 0.2);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  color: #fef3c7;
+  padding: 4px 11px;
+  border-radius: var(--radius-sm, 6px);
+  font-family: var(--font-sans, sans-serif);
+  font-size: 0.76rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all var(--transition-fast, 0.15s ease);
+  flex-shrink: 0;
+}
+
+[data-theme="light"] .btn-retry-status {
+  background: rgba(217, 119, 6, 0.15);
+  border-color: rgba(217, 119, 6, 0.35);
+  color: #78350f;
+}
+
+.btn-retry-status:hover {
+  background: rgba(245, 158, 11, 0.32);
+  border-color: rgba(245, 158, 11, 0.6);
+  transform: translateY(-1px);
+}
+
+.btn-retry-status:active {
+  transform: translateY(0);
+}

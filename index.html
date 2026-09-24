@@ -19,6 +19,15 @@
   <!-- App Root Container -->
   <div id="app" class="app-root">
 
+    <!-- Local Companion Server Connection Watchdog Banner -->
+    <div id="server-status-banner" class="server-status-banner hidden" role="alert">
+      <span class="status-icon">⚠️</span>
+      <span class="status-text">
+        <strong>Local Companion Disconnected</strong>: <code>server.py</code> is offline. Notes are not syncing to disk. Run <code>run.bat</code> or start <code>python server.py</code>.
+      </span>
+      <button id="retry-server-btn" class="btn-retry-status">Retry Connection</button>
+    </div>
+
     <!-- Top-Level Header -->
     <header class="app-header">
       <div class="header-brand">
