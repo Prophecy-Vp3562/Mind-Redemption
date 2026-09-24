@@ -4,7 +4,8 @@ import tempfile
 import os
 import shutil
 import secrets
-from datetime import datetime
+import asyncio
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import FastAPI, HTTPException, Body, Request
@@ -21,11 +22,15 @@ DECOY_DATA_FILE = DATA_FILE
 TIMELINE_DIR = STORAGE_DIR / "timeline"
 TIMELINE_DIR.mkdir(parents=True, exist_ok=True)
 DECOY_TIMELINE_DIR = TIMELINE_DIR
+DECOY_HISTORY_DIR = STORAGE_DIR / "history"
+DECOY_HISTORY_DIR.mkdir(parents=True, exist_ok=True)
 
 # Admin Vault Partition (Strictly Isolated on Disk)
 ADMIN_DATA_FILE = STORAGE_DIR / "mind-redemption-admin-data.json"
 ADMIN_TIMELINE_DIR = STORAGE_DIR / "timeline-admin"
 ADMIN_TIMELINE_DIR.mkdir(parents=True, exist_ok=True)
+ADMIN_HISTORY_DIR = STORAGE_DIR / "history-admin"
+ADMIN_HISTORY_DIR.mkdir(parents=True, exist_ok=True)
 
 # Administrative Security Credentials & In-Memory Active Session Registry
 ADMIN_VAULT_PASSWORD = os.environ.get("ADMIN_VAULT_PASSWORD", "relife")
@@ -220,7 +225,60 @@ app.add_middleware(
 )
 
 
-def atomic_write(target_path: Path, data: Dict[str, Any]):
+def purge_old_history_files():
+    """
+    48-Hour Rolling Purge:
+    Parses file names {DD}-{MM}-{YYYY}.json via datetime.strptime(filename.stem, "%d-%m-%Y").
+    Compares against datetime.now() - timedelta(hours=48).
+    Deletes any daily JSON files older than 48 hours. Never touches active workspace files.
+    """
+    cutoff = datetime.now() - timedelta(hours=48)
+    for h_dir in [DECOY_HISTORY_DIR, ADMIN_HISTORY_DIR]:
+        if not h_dir.exists():
+            continue
+        for file_path in h_dir.glob("*.json"):
+            # Never touch active workspace files
+            if file_path.name in ["mind-redemption-data.json", "mind-redemption-admin-data.json"]:
+                continue
+            try:
+                file_date = datetime.strptime(file_path.stem, "%d-%m-%Y")
+                if file_date < cutoff:
+                    try:
+                        file_path.unlink()
+                        print(f"Purged expired 48h history file: {file_path.name}")
+                    except Exception as ue:
+                        print(f"Failed to delete {file_path}: {ue}")
+            except ValueError:
+                # Filename does not match %d-%m-%Y, ignore
+                continue
+            except Exception as e:
+                print(f"Error purging history file {file_path}: {e}")
+
+# Run initial maintenance sweep on server startup
+purge_old_history_files()
+
+
+async def scheduled_history_purge():
+    """
+    Background maintenance task running every 6 hours.
+    """
+    while True:
+        try:
+            await asyncio.sleep(6 * 3600)
+            purge_old_history_files()
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            print(f"Periodic history purge error: {e}")
+
+
+@app.on_event("startup")
+async def on_startup():
+    purge_old_history_files()
+    asyncio.create_task(scheduled_history_purge())
+
+
+def atomic_write(target_path: Path, data: Any):
     """
     Performs an atomic write to prevent corruption:
     Writes JSON to a temporary file in the same directory, then atomically replaces target.
@@ -589,6 +647,104 @@ async def record_timeline_event(request: Request, payload: Dict[str, Any] = Body
 @app.get("/api/timeline/{date_str}")
 async def get_timeline_by_date_alias(date_str: str, request: Request):
     return await get_timeline_day(date_str, request)
+
+
+# ==========================================================
+# Day-Partitioned Event History Endpoints (/api/history/append, /api/history/recent)
+# ==========================================================
+
+@app.post("/api/history/append")
+async def append_history_event(request: Request, payload: Dict[str, Any] = Body(...)):
+    """
+    Appends an atomic action to today's history log. Validates payload, injects
+    server timestamp if absent, and routes to history-admin/ if authenticated
+    with X-Vault-Profile: admin and valid session token, otherwise history/.
+    """
+    is_admin, _, _ = resolve_vault(request)
+    history_dir = ADMIN_HISTORY_DIR if is_admin else DECOY_HISTORY_DIR
+    history_dir.mkdir(parents=True, exist_ok=True)
+
+    now = datetime.now()
+    today_filename = f"{now.strftime('%d-%m-%Y')}.json"
+    target_path = history_dir / today_filename
+
+    event = dict(payload)
+    now_ms = int(now.timestamp() * 1000)
+
+    if not event.get("timestamp"):
+        event["timestamp"] = now_ms
+    if not event.get("formattedDate"):
+        event["formattedDate"] = now.strftime("%d:%m:%Y")
+    if not event.get("formattedTime"):
+        event["formattedTime"] = now.strftime("%H:%M:%S")
+    if not event.get("id"):
+        event["id"] = f"evt_{now_ms}_{secrets.token_hex(4)}"
+
+    # Load today's existing events array
+    current_events: List[Dict[str, Any]] = []
+    if target_path.exists():
+        try:
+            with open(target_path, "r", encoding="utf-8") as f:
+                loaded = json.load(f)
+                if isinstance(loaded, list):
+                    current_events = loaded
+        except Exception as e:
+            print(f"Notice reading existing history log {target_path}: {e}")
+            current_events = []
+
+    current_events.append(event)
+    atomic_write(target_path, current_events)
+
+    return {
+        "status": "success",
+        "event": event,
+        "vault": "admin" if is_admin else "default"
+    }
+
+
+@app.get("/api/history/recent")
+async def get_recent_history(request: Request):
+    """
+    Returns all history events from today and yesterday (the active 48-hour window)
+    combined in chronological order.
+    """
+    is_admin, _, _ = resolve_vault(request)
+    history_dir = ADMIN_HISTORY_DIR if is_admin else DECOY_HISTORY_DIR
+    history_dir.mkdir(parents=True, exist_ok=True)
+
+    now = datetime.now()
+    yesterday = now - timedelta(days=1)
+
+    today_filename = f"{now.strftime('%d-%m-%Y')}.json"
+    yesterday_filename = f"{yesterday.strftime('%d-%m-%Y')}.json"
+
+    events: List[Dict[str, Any]] = []
+
+    # Read yesterday's partition if exists
+    yesterday_path = history_dir / yesterday_filename
+    if yesterday_path.exists():
+        try:
+            with open(yesterday_path, "r", encoding="utf-8") as f:
+                y_events = json.load(f)
+                if isinstance(y_events, list):
+                    events.extend(y_events)
+        except Exception as e:
+            print(f"Error reading yesterday history log {yesterday_path}: {e}")
+
+    # Read today's partition if exists
+    today_path = history_dir / today_filename
+    if today_path.exists():
+        try:
+            with open(today_path, "r", encoding="utf-8") as f:
+                t_events = json.load(f)
+                if isinstance(t_events, list):
+                    events.extend(t_events)
+        except Exception as e:
+            print(f"Error reading today history log {today_path}: {e}")
+
+    # Sort combined events chronologically by timestamp
+    events.sort(key=lambda x: x.get("timestamp", 0))
+    return events
 
 
 if __name__ == "__main__":

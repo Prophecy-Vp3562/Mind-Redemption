@@ -21,6 +21,32 @@ import { initNotes } from './notes.js';
 import { initDiary } from './diary.js';
 import { initTimeline, trackSession, onTimeMachineChange } from './timeline.js';
 import { initCloakEngine, isCloaked, revealCloak } from './cloak.js';
+import {
+  initHistory,
+  purgeHistoryState,
+  switchHistoryVault,
+  loadHistoryFromBackend,
+  undo,
+  redo,
+  recordEvent,
+  formatCustomDate,
+  formatCustomTime,
+  formatCustomDateTime,
+  showToastNotification
+} from './history.js';
+
+if (typeof window !== 'undefined') {
+  window.initNotes = initNotes;
+  window.initMindFlow = initMindFlow;
+  window.initDiary = initDiary;
+  window.undo = undo;
+  window.redo = redo;
+  window.recordHistoryEvent = recordEvent;
+  window.formatCustomDate = formatCustomDate;
+  window.formatCustomTime = formatCustomTime;
+  window.formatCustomDateTime = formatCustomDateTime;
+  window.showToastNotification = showToastNotification;
+}
 
 const THEME_KEY = 'thought_theme';
 const VALID_TABS = ['mindflow', 'notes', 'diary'];
@@ -469,6 +495,9 @@ async function handleAdminAuthSubmit(e) {
     try { initDiary(); } catch (err) { console.error('Diary admin init error:', err); }
     try { initTimeline(); } catch (err) { console.error('Timeline admin init error:', err); }
 
+    // Reload history exclusively from the isolated admin history partition
+    try { await switchHistoryVault('admin'); } catch (err) { console.error('History admin init error:', err); }
+
     // Reveal discrete admin indicator beside clock
     const badge = document.getElementById('admin-session-badge');
     if (badge) badge.classList.remove('hidden');
@@ -540,6 +569,10 @@ export function executeFlushAndSwapExit(noticeMsg = null) {
 
   // Revoke session token on companion server
   logoutAdminVault();
+
+  // In-Memory Hygiene: Purge admin history immediately from memory and reload decoy history
+  purgeHistoryState();
+  loadHistoryFromBackend();
 
   // 5. Instantly re-render workspace (<16ms)
   // Close any open modals
@@ -645,6 +678,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   try { initNotes(); } catch (e) { console.error('Notes init error:', e); }
   try { initDiary(); } catch (e) { console.error('Diary init error:', e); }
   try { initTimeline(); } catch (e) { console.error('Timeline init error:', e); }
+  try { await initHistory(); } catch (e) { console.error('History init error:', e); }
 
   // 4. Retrieve activeWorkspace state and activate recorded tab
   const workspace = getActiveWorkspace() || { currentTab: 'mindflow' };
@@ -923,6 +957,20 @@ export function restoreTrashItem(id) {
 
   storage.scheduleSave(0);
   refreshBinUI();
+
+  // Record structural TRASH_RESTORE event in history
+  recordEvent({
+    type: 'TRASH_RESTORE',
+    target: { scope: 'trash', id: item.id },
+    before: { trashItem: JSON.parse(JSON.stringify(item)) },
+    after: { restoredTo: item.type, item: JSON.parse(JSON.stringify(item.payload)) }
+  });
+
+  // Display notification toast with canonical date & time
+  const dateStr = formatCustomDate();
+  const timeStr = formatCustomTime();
+  const label = item.type === 'note' ? 'Note' : 'Slide';
+  showToastNotification(`↩ Restored ${label}: '${item.title || 'Untitled'}' (${dateStr} ${timeStr})`);
 }
 
 export function permanentlyDeleteTrashItem(id) {

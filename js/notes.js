@@ -142,11 +142,20 @@ export class NotesController {
             updatedAt: new Date().toISOString()
           };
           this.activeEditNoteId = newNote.id;
+          window._activeEditNoteId = newNote.id;
           this.getNotes().unshift(newNote);
           storage.scheduleSave();
           this.render();
           if (this.modalDeleteBtn) this.modalDeleteBtn.style.display = 'inline-flex';
           logTimelineEvent('notes', 'CREATE', newNote.id, newNote.title, newNote.content);
+          if (typeof window.recordHistoryEvent === 'function') {
+            window.recordHistoryEvent({
+              type: 'NOTE_CREATE',
+              target: { scope: 'notes', id: newNote.id },
+              before: null,
+              after: { note: JSON.parse(JSON.stringify(newNote)) }
+            });
+          }
         }
         return;
       }
@@ -205,6 +214,14 @@ export class NotesController {
       this.getNotes().unshift(newNote);
       storage.scheduleSave();
       logTimelineEvent('notes', 'CREATE', newNote.id, newNote.title, newNote.content);
+      if (typeof window.recordHistoryEvent === 'function') {
+        window.recordHistoryEvent({
+          type: 'NOTE_CREATE',
+          target: { scope: 'notes', id: newNote.id },
+          before: null,
+          after: { note: JSON.parse(JSON.stringify(newNote)) }
+        });
+      }
     }
 
     // Reset inputs
@@ -392,11 +409,20 @@ export class NotesController {
     // Pin click
     card.querySelector('.note-card-pin')?.addEventListener('click', (e) => {
       e.stopPropagation();
+      const prevPinned = isPinned;
       const newPinned = !isPinned;
       note.pinned = newPinned;
       note.isPinned = newPinned;
       note.updatedAt = new Date().toISOString();
       storage.scheduleSave();
+      if (typeof window.recordHistoryEvent === 'function') {
+        window.recordHistoryEvent({
+          type: 'NOTE_PIN',
+          target: { scope: 'notes', id: note.id },
+          before: { pinned: prevPinned },
+          after: { pinned: newPinned }
+        });
+      }
       this.render();
     });
 
@@ -409,14 +435,23 @@ export class NotesController {
         if (idx !== -1) {
           const [deletedItem] = notes.splice(idx, 1);
           const trash = storage.getTrashData();
+          const trashId = 'trash_' + Date.now();
           trash.unshift({
-            id: 'trash_' + Date.now(),
+            id: trashId,
             type: 'note',
             title: deletedItem.title || 'Untitled Note',
             deletedAt: new Date().toISOString(),
             payload: deletedItem
           });
           storage.scheduleSave();
+          if (typeof window.recordHistoryEvent === 'function') {
+            window.recordHistoryEvent({
+              type: 'NOTE_DELETE',
+              target: { scope: 'notes', id: deletedItem.id },
+              before: { note: JSON.parse(JSON.stringify(deletedItem)), index: idx },
+              after: { trashId: trashId }
+            });
+          }
           if (typeof window.refreshBinUI === 'function') {
             window.refreshBinUI();
           }
@@ -434,6 +469,7 @@ export class NotesController {
       if (!note) return;
 
       this.activeEditNoteId = note.id;
+      window._activeEditNoteId = note.id;
       this.modalTitle.value = note.title || '';
       this.modalBody.value = note.content || '';
       this.isModalPinned = !!(note.pinned || note.isPinned);
@@ -441,6 +477,7 @@ export class NotesController {
       if (this.modalDeleteBtn) this.modalDeleteBtn.style.display = 'inline-flex';
     } else {
       this.activeEditNoteId = null;
+      window._activeEditNoteId = null;
       this.modalTitle.value = '';
       this.modalBody.value = '';
       this.isModalPinned = false;
@@ -476,6 +513,14 @@ export class NotesController {
         this.getNotes().unshift(newNote);
         storage.scheduleSave();
         logTimelineEvent('notes', 'CREATE', newNote.id, newNote.title, newNote.content);
+        if (typeof window.recordHistoryEvent === 'function') {
+          window.recordHistoryEvent({
+            type: 'NOTE_CREATE',
+            target: { scope: 'notes', id: newNote.id },
+            before: null,
+            after: { note: JSON.parse(JSON.stringify(newNote)) }
+          });
+        }
       }
     } else {
       const notes = this.getNotes();
@@ -494,6 +539,7 @@ export class NotesController {
       }
     }
     this.activeEditNoteId = null;
+    window._activeEditNoteId = null;
     this.editModal?.classList.add('hidden');
     this.render();
   }
@@ -508,14 +554,23 @@ export class NotesController {
       if (idx !== -1) {
         const [deletedItem] = notes.splice(idx, 1);
         const trash = storage.getTrashData();
+        const trashId = 'trash_' + Date.now();
         trash.unshift({
-          id: 'trash_' + Date.now(),
+          id: trashId,
           type: 'note',
           title: deletedItem.title || 'Untitled Note',
           deletedAt: new Date().toISOString(),
           payload: deletedItem
         });
         storage.scheduleSave();
+        if (typeof window.recordHistoryEvent === 'function') {
+          window.recordHistoryEvent({
+            type: 'NOTE_DELETE',
+            target: { scope: 'notes', id: deletedItem.id },
+            before: { note: JSON.parse(JSON.stringify(deletedItem)), index: idx },
+            after: { trashId: trashId }
+          });
+        }
         if (typeof window.refreshBinUI === 'function') {
           window.refreshBinUI();
         }
@@ -528,13 +583,22 @@ export class NotesController {
     if (!this.activeEditNoteId) return;
     const note = this.getNotes().find(n => n.id === this.activeEditNoteId);
     if (note) {
-      const newPinned = !(note.pinned || note.isPinned);
+      const prevPinned = !!(note.pinned || note.isPinned);
+      const newPinned = !prevPinned;
       note.pinned = newPinned;
       note.isPinned = newPinned;
       this.isModalPinned = newPinned;
       this.modalPinBtn.classList.toggle('active', newPinned);
       note.updatedAt = new Date().toISOString();
       storage.scheduleSave();
+      if (typeof window.recordHistoryEvent === 'function') {
+        window.recordHistoryEvent({
+          type: 'NOTE_PIN',
+          target: { scope: 'notes', id: note.id },
+          before: { pinned: prevPinned },
+          after: { pinned: newPinned }
+        });
+      }
       this.render();
     }
   }

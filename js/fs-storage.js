@@ -496,6 +496,61 @@ export const storage = {
       });
     });
   },
+  appendHistoryEvent,
+  fetchRecentHistory,
   onSaveStatus(listener) {},
   onDataChange(listener) {}
 };
+
+/**
+ * Appends an atomic action to today's history log on companion server
+ * Routes to history-admin/ if active profile is admin, otherwise history/
+ */
+export async function appendHistoryEvent(event) {
+  try {
+    const res = await fetch(`${API_BASE}/history/append`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getVaultHeaders()
+      },
+      body: JSON.stringify(event)
+    });
+
+    if (!res.ok) {
+      console.warn('History append returned status:', res.status);
+      return null;
+    }
+    return await res.json();
+  } catch (err) {
+    console.warn('History append network error:', err);
+    return null;
+  }
+}
+
+/**
+ * Fetches recent 48-hour history events (today and yesterday)
+ * in chronological order from companion server
+ */
+export async function fetchRecentHistory() {
+  try {
+    const res = await fetch(`${API_BASE}/history/recent`, {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json',
+        ...getVaultHeaders()
+      }
+    });
+
+    if (!res.ok) {
+      console.warn('Fetch recent history returned status:', res.status);
+      return [];
+    }
+    const data = await res.json();
+    return Array.isArray(data) ? data : [];
+  } catch (err) {
+    console.warn('Fetch recent history network error:', err);
+    return [];
+  }
+}
+

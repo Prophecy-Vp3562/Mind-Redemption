@@ -646,6 +646,14 @@ export class MindFlowController {
 
       storage.scheduleSave();
       logTimelineEvent('mindflow', 'CREATE', newPage.id, `Slide ${note.pages.length}`, 'New Mind Flow Slide');
+      if (typeof window.recordHistoryEvent === 'function') {
+        window.recordHistoryEvent({
+          type: 'MINDFLOW_SLIDE_ADD',
+          target: { scope: 'mindflow', bookId: note.id, slideId: newPage.id },
+          before: null,
+          after: { slide: JSON.parse(JSON.stringify(newPage)), index: note.pages.length - 1 }
+        });
+      }
       this.renderWorkspace();
     };
 
@@ -664,19 +672,30 @@ export class MindFlowController {
     }
 
     if (confirm(`Move Page ${this.currentPageIndex + 1} to the Recycle Bin?`)) {
+      const deletedIndex = this.currentPageIndex;
       const [deletedPage] = note.pages.splice(this.currentPageIndex, 1);
       deletedPage._isSlide = true;
       deletedPage._parentBookId = note.id;
       deletedPage._parentBookTitle = note.title;
       const slideTitle = `${note.title} - Page ${this.currentPageIndex + 1}`;
       const trash = storage.getTrashData();
+      const trashId = 'trash_' + Date.now();
       trash.unshift({
-        id: 'trash_' + Date.now(),
+        id: trashId,
         type: 'mindflow',
         title: slideTitle,
         deletedAt: new Date().toISOString(),
         payload: deletedPage
       });
+
+      if (typeof window.recordHistoryEvent === 'function') {
+        window.recordHistoryEvent({
+          type: 'MINDFLOW_SLIDE_DELETE',
+          target: { scope: 'mindflow', bookId: note.id, slideId: deletedPage.id },
+          before: { slide: JSON.parse(JSON.stringify(deletedPage)), index: deletedIndex, bookTitle: note.title },
+          after: { trashId: trashId }
+        });
+      }
 
       if (this.currentPageIndex >= note.pages.length) {
         this.currentPageIndex = note.pages.length - 1;

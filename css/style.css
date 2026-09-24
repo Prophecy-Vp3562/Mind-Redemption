@@ -3823,3 +3823,86 @@ body.chameleon-cloaked .symbol-dot {
 .btn-retry-status:active {
   transform: translateY(0);
 }
+
+/* ==========================================================================
+   Linear Event History Notification Toasts (Undo/Redo & Restore)
+   Aesthetic: Nordic Sage (Light) & Smoked Obsidian (Dark)
+   ========================================================================== */
+
+.history-toast-container {
+  position: fixed;
+  bottom: 1.75rem;
+  right: 1.75rem;
+  z-index: 10000;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  pointer-events: none;
+}
+
+.history-toast {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.75rem 1.25rem;
+  border-radius: var(--radius-md, 9px);
+  font-family: var(--font-sans, 'Plus Jakarta Sans', sans-serif);
+  font-size: 0.84rem;
+  font-weight: 500;
+  line-height: 1.4;
+  pointer-events: auto;
+  transition: opacity 0.3s cubic-bezier(0.16, 1, 0.3, 1), transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  animation: historyToastSlideIn 0.32s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  user-select: none;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+
+  /* Light Theme Default: Nordic Sage */
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid rgba(61, 92, 75, 0.22);
+  color: #1b241e;
+  box-shadow: 0 10px 28px rgba(30, 42, 34, 0.1), 0 2px 6px rgba(30, 42, 34, 0.05);
+}
+
+.history-toast .history-toast-icon {
+  font-size: 1.1rem;
+  color: #3d5c4b;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.history-toast .history-toast-msg {
+  color: inherit;
+  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+}
+
+/* Dark Theme: Smoked Obsidian */
+[data-theme="dark"] .history-toast,
+body.theme-dark .history-toast {
+  background: rgba(21, 25, 34, 0.95);
+  border-color: rgba(223, 169, 92, 0.3);
+  color: #e8ecf2;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55), 0 0 18px rgba(223, 169, 92, 0.12);
+}
+
+[data-theme="dark"] .history-toast .history-toast-icon,
+body.theme-dark .history-toast .history-toast-icon {
+  color: #dfa95c;
+}
+
+.history-toast.toast-dismissing {
+  opacity: 0;
+  transform: translateY(10px) scale(0.96);
+  pointer-events: none;
+}
+
+@keyframes historyToastSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
